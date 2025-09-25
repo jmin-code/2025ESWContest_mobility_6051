@@ -1,0 +1,22 @@
+{
+  "word_to_num": {
+    "arrival": 1,
+    "correct": 2,
+    "delete": 3,
+    "description": 4,
+    "emergency": 5,
+    "start": 6,
+    "traffic": 7,
+    "voice": 8
+  },
+  "num_to_word": {
+    "1": "arrival",
+    "2": "correct",
+    "3": "delete",
+    "4": "description",
+    "5": "emergency",
+    "6": "start",
+    "7": "traffic",
+    "8": "voice"
+  }
+}

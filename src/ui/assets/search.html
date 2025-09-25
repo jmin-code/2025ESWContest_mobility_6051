@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>주변 장소 동적 검색</title>
+  <style>
+    html, body { height:100%; margin:0; }
+    #map { position:absolute; inset:0; }
+
+    /* 현재 위치 파동 점 (빨간색) */
+    .loc-pulse.red {
+      width: 14px; height: 14px; border-radius: 50%;
+      background: #ff3b30;           /* 빨강 */
+      border: 2px solid #fff;
+      box-shadow: 0 0 0 0 rgba(255,59,48,0.7);
+      animation: locPulseRed 1.6s infinite;
+    }
+    @keyframes locPulseRed {
+      0%   { box-shadow: 0 0 0 0 rgba(255,59,48,0.7); }
+      70%  { box-shadow: 0 0 0 16px rgba(255,59,48,0); }
+      100% { box-shadow: 0 0 0 0 rgba(255,59,48,0); }
+    }
+
+    #diag {
+      position: fixed; left: 10px; bottom: 10px; z-index: 9999;
+      background: rgba(255,255,255,0.95); border: 1px solid #aaa; border-radius: 8px;
+      padding: 8px 10px; font: 12px/1.4 system-ui, sans-serif; max-width: 72%;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="diag" hidden></div>
+
+  <!-- autoload=false: onload 이후 kakao.maps.load에서 init -->
+  <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&libraries=services&autoload=false"></script>
+  <script>
+    const $diag = document.getElementById('diag');
+    const say = (...m) => { console.log('[SEARCH]', ...m); $diag.hidden=false; $diag.textContent = m.join(' '); };
+
+    kakao.maps.load(() => {
+      const p = new URLSearchParams(location.search);
+      const raw = p.get('keyword');
+      const keyword = raw ? raw.trim() : "";     // ← 빈 문자열이면 검색하지 않음
+      const latP = parseFloat(p.get('lat') || 'NaN');
+      const lngP = parseFloat(p.get('lng') || 'NaN');
+
+      // 0) 지도 먼저 (흰 화면 방지)
+      const fallback = new kakao.maps.LatLng(37.5665, 126.9780);
+      const map = new kakao.maps.Map(document.getElementById('map'), { center: fallback, level: 5 });
+
+      // ===== 현재 위치 표시: 빨간 파동 + 정확도 원 =====
+      let curOverlay = null;     // 파동 점
+      let accuracyCircle = null; // 정확도 원
+      function clearCurrentMarker() {
+        if (curOverlay) { curOverlay.setMap(null); curOverlay = null; }
+        if (accuracyCircle) { accuracyCircle.setMap(null); accuracyCircle = null; }
+      }
+      function updateCurrentMarker(pos, accuracy=null) {
+        clearCurrentMarker();
+        // 빨간 파동 점(HTML/CSS)
+        const html = '<div class="loc-pulse red"></div>';
+        curOverlay = new kakao.maps.CustomOverlay({ position: pos, content: html, yAnchor: 1, zIndex: 1000 });
+        curOverlay.setMap(map);
+        // 정확도 원(지오로케이션일 때만)
+        if (Number.isFinite(accuracy) && accuracy > 0) {
+          accuracyCircle = new kakao.maps.Circle({
+            center: pos, radius: accuracy,
+            strokeWeight: 1, strokeColor: '#ff3b30', strokeOpacity: 0.7,
+            fillColor: '#ff3b30', fillOpacity: 0.12, zIndex: 5
+          });
+          accuracyCircle.setMap(map);
+        }
+      }
+      // ===============================================
+
+      function readyAt(lat0, lng0, accuracy=null) {
+        const center = new kakao.maps.LatLng(lat0, lng0);
+        map.setCenter(center);
+        updateCurrentMarker(center, accuracy);
+
+        if (!keyword) {
+          // 키워드 없으면 현재 위치만 보여주고 끝
+          document.title = '현재 위치';
+          say(`현재 위치: (${lat0.toFixed(5)}, ${lng0.toFixed(5)})`);
+          return;
+        }
+
+        // 키워드 있으면 주변 검색
+        document.title = `'${keyword}' 주변 검색`;
+        say(`'${keyword}' 검색 중…`);
+        const ps = new kakao.maps.services.Places();
+        const bounds = new kakao.maps.LatLngBounds();
+
+        ps.keywordSearch(
+          keyword,
+          (data, status) => {
+            console.log('[KEYWORD] status=', status, 'len=', data && data.length);
+            if (status === kakao.maps.services.Status.OK && data.length) {
+              data.forEach(place => {
+                const pos = new kakao.maps.LatLng(place.y, place.x); // (lat=y, lng=x)
+                new kakao.maps.Marker({ map, position: pos, title: place.place_name });
+                bounds.extend(pos);
+              });
+              // 현재 위치도 bounds에 포함시켜 함께 보이게
+              bounds.extend(center);
+              map.setBounds(bounds);
+              say(`'${keyword}' 결과 ${data.length}개`);
+            } else if (status === kakao.maps.services.Status.ZERO_RESULT) {
+              say(`'${keyword}' 결과 없음 (ZERO_RESULT)`);
+            } else {
+              say(`검색 실패: status=${status}`);
+            }
+          },
+          { location: center, radius: 2000 } // 2km 반경 내
+        );
+      }
+
+      // 1) 중심 결정: URL → geolocation → fallback
+      if (!Number.isNaN(latP) && !Number.isNaN(lngP)) {
+        readyAt(latP, lngP);
+      } else if ('geolocation' in navigator) {
+        navigator.geolocation.getCurrentPosition(
+          pos => {
+            const { latitude, longitude, accuracy } = pos.coords;
+            readyAt(latitude, longitude, accuracy);
+          },
+          _ => readyAt(37.5665, 126.9780),
+          { enableHighAccuracy:true, timeout:4000, maximumAge:0 }
+        );
+      } else {
+        readyAt(37.5665, 126.9780);
+      }
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+
+-DCATKIN_DEVEL_PREFIX=/home/autonav/AUTONAV_Embedded_SW/devel -DCMAKE_INSTALL_PREFIX=/home/autonav/AUTONAV_Embedded_SW/install -G Unix Makefiles

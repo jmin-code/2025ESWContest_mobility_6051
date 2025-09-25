@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <title>Kakao Map – Debugging Mode</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <style>
+    html,body{height:100%;margin:0}
+    #map{width:100%;height:100vh}
+    #diag{position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,0.9);
+          border:1px solid #aaa; border-radius:8px;padding:10px 12px;font:13px/1.5 monospace;
+          max-width:520px;max-height: 200px; overflow-y: auto;
+          box-shadow:0 8px 24px rgba(0,0,0,0.08);white-space:pre-wrap}
+  </style>
+  <script id="kakao-sdk"
+    src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&autoload=false&libraries=services"
+    defer></script>
+</head>
+<body>
+  <div id="map"></div>
+  <div id="diag">진단 로그:</div>
+
+  <script>
+    // [디버깅] 화면에 로그를 남기는 함수
+    const logDiag = (msg, isError = false) => {
+      const box = document.getElementById('diag');
+      const time = new Date().toLocaleTimeString();
+      const status = isError ? '❌' : '✅';
+      box.innerHTML += `\n${status} ${time}: ${msg}`;
+      box.scrollTop = box.scrollHeight; // 항상 마지막 로그가 보이도록 스크롤
+      
+      // [디버깅] 브라우저 개발자 콘솔에도 로그 출력
+      if (isError) {
+        console.error(msg);
+      } else {
+        console.log(msg);
+      }
+    };
+    
+    // [디버깅] SDK 로드 실패 시
+    const sdk = document.getElementById('kakao-sdk');
+    sdk.onerror = () => logDiag('Kakao SDK 로드 실패! appkey 또는 네트워크를 확인하세요.', true);
+
+    const qs = new URLSearchParams(location.search);
+    const toQuery = qs.get('to');
+    const travelMode = qs.get('mode') || 'car';
+    const autoGo = qs.get('auto') === '1';
+    logDiag(`URL 파라미터 확인: to=${toQuery}, mode=${travelMode}, auto=${autoGo}`);
+
+    // 브라우저 위치(HTTPS 또는 localhost에서 권장)
+    const getCurrentPosition = () => new Promise((resolve, reject) => {
+      logDiag('내 위치 가져오기 시도...');
+      if (!navigator.geolocation) {
+        return reject(new Error('Geolocation 미지원 브라우저'));
+      }
+      navigator.geolocation.getCurrentPosition(
+        p => {
+          logDiag('내 위치 가져오기 성공!');
+          resolve({ lat: p.coords.latitude, lng: p.coords.longitude });
+        },
+        e => {
+          reject(new Error(`위치 정보 오류: ${e.message}`));
+        },
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    });
+
+    // 장소명 또는 주소 문자열을 목적지 좌표로 변환
+    async function resolveDestination(query, map) {
+      logDiag(`목적지 좌표 변환 시도: "${query}"`);
+      return new Promise((resolve) => {
+        const places = new kakao.maps.services.Places(map);
+        places.keywordSearch(query, (data, status) => {
+          if (status === kakao.maps.services.Status.OK && data.length) {
+            const top = data[0];
+            logDiag(`목적지 키워드 검색 성공: ${top.place_name}`);
+            resolve({ name: top.place_name || query, lat: parseFloat(top.y), lng: parseFloat(top.x) });
+          } else {
+            logDiag('키워드 검색 실패. 주소 검색으로 재시도...');
+            const geocoder = new kakao.maps.services.Geocoder();
+            geocoder.addressSearch(query, (result, s) => {
+              if (s === kakao.maps.services.Status.OK && result.length) {
+                const r = result[0];
+                logDiag(`목적지 주소 검색 성공: ${r.address_name}`);
+                resolve({ name: r.road_address?.address_name || r.address_name || query, lat: parseFloat(r.y), lng: parseFloat(r.x) });
+              } else {
+                logDiag('최종 목적지 검색 실패!', true);
+                resolve(null);
+              }
+            });
+          }
+        });
+      });
+    }
+
+    // 메인 로직
+    window.addEventListener('load', () => {
+      logDiag('페이지 로드 완료.');
+      if (!window.kakao || !window.kakao.maps) {
+        logDiag('kakao.maps 객체 없음! SDK가 제대로 로드되지 않았습니다.', true);
+        return;
+      }
+      
+      logDiag('kakao.maps.load() 실행...');
+      kakao.maps.load(async () => {
+        try {
+          logDiag('Kakao Map 초기화 시작.');
+          const container = document.getElementById('map');
+          const map = new kakao.maps.Map(container, {
+            center: new kakao.maps.LatLng(37.5665, 126.9780), level: 4
+          });
+          logDiag('지도 객체 생성 완료.');
+
+          if (!toQuery) {
+            logDiag('대기 중: URL에 ?to=장소명 형식으로 목적지를 전달하세요.');
+            return;
+          }
+
+          const dest = await resolveDestination(toQuery, map);
+          if (!dest) return;
+
+          const destPos = new kakao.maps.LatLng(dest.lat, dest.lng);
+          new kakao.maps.Marker({ position: destPos }).setMap(map);
+          map.setCenter(destPos);
+          logDiag(`목적지 표시 완료: ${dest.name}`);
+
+          const cur = await getCurrentPosition();
+          const url = `https://map.kakao.com/link/by/${travelMode}/${encodeURIComponent('내 위치')},${cur.lat},${cur.lng}/${encodeURIComponent(dest.name)},${dest.lat},${dest.lng}`;
+          
+          if (autoGo) {
+            logDiag('자동으로 길찾기 페이지를 엽니다...');
+            window.open(url, '_blank');
+          } else {
+            // ... 버튼 생성 로직
+          }
+        } catch (error) {
+          logDiag(`메인 로직 실행 중 오류 발생: ${error.message}`, true);
+        }
+      });
+    });
+  </script>
+</body>
+</html>

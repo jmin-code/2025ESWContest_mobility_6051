@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>SignNav Route</title>
+    <style>html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }</style>
+    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&libraries=services"></script>
+</head>
+<body>
+    <div id="map"></div>
+    <script>
+        let map;
+        let startCoords;
+        let polyline = null;
+        let destMarker = null;
+
+        function initMap() {
+            const params = new URLSearchParams(window.location.search);
+            const sLat = parseFloat(params.get('sLat'));
+            const sLng = parseFloat(params.get('sLng'));
+            startCoords = new kakao.maps.LatLng(sLat, sLng);
+
+            const mapContainer = document.getElementById('map');
+            const mapOption = { center: startCoords, level: 5 };
+            map = new kakao.maps.Map(mapContainer, mapOption);
+
+            new kakao.maps.Marker({ position: startCoords, map: map });
+        }
+
+        function drawRouteToDestination(destination) {
+            if (polyline) polyline.setMap(null);
+            if (destMarker) destMarker.setMap(null);
+
+            const places = new kakao.maps.services.Places();
+
+            places.keywordSearch(destination, (data, status) => {
+                if (status === kakao.maps.services.Status.OK && data.length > 0) {
+                    const place = data[0];
+                    const destCoords = new kakao.maps.LatLng(place.y, place.x);
+                    
+                    destMarker = new kakao.maps.Marker({ position: destCoords, map: map });
+                    
+                    const bounds = new kakao.maps.LatLngBounds();
+                    bounds.extend(startCoords);
+                    bounds.extend(destCoords);
+                    
+                    const url = `https://router.project-osrm.org/route/v1/driving/${startCoords.getLng()},${startCoords.getLat()};${destCoords.getLng()},${destCoords.getLat()}?overview=full&geometries=geojson`;
+                    fetch(url).then(r => r.json()).then(jsonData => {
+                        const path = jsonData.routes[0].geometry.coordinates.map(p => new kakao.maps.LatLng(p[1], p[0]));
+                        polyline = new kakao.maps.Polyline({ path, strokeWeight: 6, strokeColor: '#0066FF', strokeOpacity: 0.9, map: map });
+                        map.setBounds(bounds);
+                    });
+                } else {
+                    alert(`'${destination}' 목적지를 찾을 수 없습니다.`);
+                }
+            });
+
+        }
+        
+        kakao.maps.load(initMap);
+    </script>
+</body>
+</html>
