@@ -1,0 +1,19 @@
+
+# Python Virtual Environment
+mediapipe-env/
+venv/
+.venv/
+
+# AI/ML Models & Data
+*.joblib
+scaler.joblib
+
+# Python Cache
+__pycache__/
+*.pyc
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+
