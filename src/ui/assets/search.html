@@ -7,21 +7,19 @@
   <style>
     html,body{height:100%;margin:0}
     #map{width:100%;height:100vh}
-    #diag{
-      position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,0.92);
-      border:1px solid #aaa;border-radius:10px;padding:10px 12px;font:13px/1.5 monospace;
-      max-width:580px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.08);white-space:pre-wrap;z-index:1001
+    
+    /* <<< 수정: 디버그용 UI 요소들 숨기기 --- */
+    #diag, #badge {
+      display: none;
     }
+    /* ------------------------------------ */
+
     .loc-pulse{
       width:14px;height:14px;border-radius:50%;background:#2979ff;box-shadow:0 0 0 rgba(41,121,255,0.6);
       animation:pulse 2s infinite;border:2px solid #fff
     }
     .loc-pulse.red{background:#ff1744;box-shadow:0 0 0 rgba(255,23,68,0.5)}
     @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(41,121,255,0.5)}70%{box-shadow:0 0 0 16px rgba(41,121,255,0)}100%{box-shadow:0 0 0 0 rgba(41,121,255,0)}}
-    #badge{
-      position:fixed;right:12px;bottom:12px;background:#111;color:#fff;border-radius:8px;padding:6px 10px;
-      font:12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; z-index:1002; opacity:.85
-    }
   </style>
   <script id="kakao-sdk"
     src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&autoload=false&libraries=services"
@@ -29,26 +27,23 @@
 </head>
 <body>
   <div id="map"></div>
-  <div id="diag">진단 로그:</div>
-  <div id="badge">init: …</div>
+  <div id="diag"></div>
+  <div id="badge"></div>
 
   <script>
     // ===== 진단/유틸 =====
-    const diagEl = () => document.getElementById('diag');
-    const badgeEl = () => document.getElementById('badge');
-    function logDiag(msg, isError=false){
-      const t = new Date().toLocaleTimeString();
-      const icon = isError ? '❌' : '✅';
-      diagEl().textContent += `\n${icon} ${t}: ${msg}`;
-      diagEl().scrollTop = diagEl().scrollHeight;
-      (isError ? console.error : console.log)(msg);
+    // <<< 수정: 함수 내용은 비워두어 로그가 출력되지 않도록 함
+    function logDiag(msg, isError=false){ /* 비활성화 */ }
+    function setBadge(text){ /* 비활성화 */ }
+
+    function getQueryParams() {
+      let q = window.location.search;
+      if (!q && window.location.hash && window.location.hash.includes('?')) {
+        q = window.location.hash.substring(window.location.hash.indexOf('?'));
+      }
+      return new URLSearchParams(q);
     }
-    function setBadge(text){ badgeEl().textContent = `init: ${text}`; }
-
-    const sdk = document.getElementById('kakao-sdk');
-    sdk.onerror = () => logDiag('Kakao SDK 로드 실패! appkey/네트워크 확인.', true);
-
-    const qs = new URLSearchParams(location.search);
+    const qs = getQueryParams();
     function fnum(v){ const x = parseFloat(v); return Number.isFinite(x) ? x : NaN; }
 
     // ===== 전역 =====
@@ -58,7 +53,7 @@
     let poiMarkers = [];
     let lastKeyword = '';
     let lastRadius = 2000;
-    const FALLBACK = { lat:37.5665, lng:126.9780 }; // 서울시청
+    const FALLBACK = { lat:37.5665, lng:126.9780 };
 
     // ===== 마커/오버레이 관리 =====
     function setCurrentOverlay(lat, lng, danger=false){
@@ -75,17 +70,19 @@
 
     // ===== 외부에서 주입 가능 API =====
     window.updateCurrentLocation = function(lat, lng){
-      if (!map){ logDiag('map 미초기화 상태에서 updateCurrentLocation 호출됨', true); return; }
+      if (!map) return;
       const center = new kakao.maps.LatLng(lat, lng);
       map.setCenter(center);
       setCurrentOverlay(lat, lng);
       if (lastKeyword) runNearbySearch(lastKeyword, lat, lng, lastRadius);
-      logDiag(`외부 주입 좌표 반영: (${lat}, ${lng})`);
-      setBadge('external-update');
+    };
+    window.setStartLocation = function(lat, lng){
+      if (typeof window.updateCurrentLocation === 'function') {
+        window.updateCurrentLocation(lat, lng);
+      }
     };
     window.setSearchKeyword = function(keyword){
       lastKeyword = (keyword || '').trim();
-      logDiag(`키워드 변경: "${lastKeyword}"`);
     };
 
     // ===== 검색 =====
@@ -94,14 +91,9 @@
       lastKeyword = (keyword || '').trim();
       lastRadius = Number(radius) || 2000;
 
-      if (!lastKeyword){
-        logDiag('키워드 없음 → 검색 생략');
-        return;
-      }
+      if (!lastKeyword) return;
 
       const center = new kakao.maps.LatLng(lat, lng);
-      logDiag(`검색 시작: "${lastKeyword}", r=${lastRadius}m, base=(${lat.toFixed(5)}, ${lng.toFixed(5)})`);
-
       clearPoiMarkers();
       const bounds = new kakao.maps.LatLngBounds();
       bounds.extend(center);
@@ -119,12 +111,8 @@
               bounds.extend(pos);
             });
             map.setBounds(bounds);
-            logDiag(`검색 성공: ${data.length}개 결과`);
-          } else if (status === kakao.maps.services.Status.ZERO_RESULT){
-            logDiag('검색 결과 없음');
-            map.setCenter(center);
           } else {
-            logDiag(`검색 실패 (status=${status})`, true);
+            map.setCenter(center);
           }
         },
         { location: center, radius: lastRadius }
@@ -139,63 +127,46 @@
       const kw = (qs.get('keyword') || '').trim();
       const radius = parseInt(qs.get('radius') || '2000', 10);
       lastKeyword = kw; lastRadius = Number(radius) || 2000;
-      if (accuracy != null) logDiag(`현재 위치 정확도: ±${Math.round(accuracy)}m`);
       if (kw) runNearbySearch(kw, lat, lng, radius);
     }
 
     // ===== SDK 로드 후 실행 =====
     function initAfterSdk(){
-      // 1) 먼저 지도를 "임시 중심"으로만 생성 (흰 화면 방지)
       map = new kakao.maps.Map(
         document.getElementById('map'),
         { center: new kakao.maps.LatLng(FALLBACK.lat, FALLBACK.lng), level:5 }
       );
-      logDiag('지도 객체 생성 완료');
+      
+      const latRaw = qs.get('lat') ?? qs.get('latitude') ?? qs.get('sLat');
+      const lngRaw = qs.get('lng') ?? qs.get('lon') ?? qs.get('longitude') ?? qs.get('sLng');
+      const latP = fnum(latRaw);
+      const lngP = fnum(lngRaw);
 
-      // 2) URL 파라미터 읽기
-      const latP = fnum(qs.get('lat'));
-      const lngP = fnum(qs.get('lng'));
-      const kw = (qs.get('keyword') || '').trim();
-      const radius = parseInt(qs.get('radius') || '2000', 10);
-      logDiag(`URL 파라미터: lat="${qs.get('lat')}", lng="${qs.get('lng')}", keyword="${kw}", radius="${radius}"`);
-
-      // 3) 우선순위: URL → Geolocation → Fallback
       if (Number.isFinite(latP) && Number.isFinite(lngP)){
-        setBadge('url-params');
-        logDiag(`URL 좌표 사용: (${latP}, ${lngP})`);
         readyAt(latP, lngP, null);
-        return; // ★ geolocation 시도 없이 바로 종료
+        return;
       }
 
       if ('geolocation' in navigator){
-        setBadge('geolocation');
-        logDiag('브라우저 위치 요청...');
         navigator.geolocation.getCurrentPosition(
           pos => {
-            logDiag('브라우저 위치 획득 성공');
             readyAt(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
           },
           err => {
-            setBadge('fallback');
-            logDiag(`브라우저 위치 실패: ${err.message} → fallback 사용`, true);
             readyAt(FALLBACK.lat, FALLBACK.lng, null);
           },
           { enableHighAccuracy:true, timeout:6000, maximumAge:0 }
         );
       } else {
-        setBadge('fallback');
-        logDiag('Geolocation 미지원 → fallback 사용', true);
         readyAt(FALLBACK.lat, FALLBACK.lng, null);
       }
     }
 
     // ===== 부트스트랩 =====
     window.addEventListener('load', () => {
-      logDiag('페이지 로드 완료');
-      if (!window.kakao || !window.kakao.maps){
-        logDiag('kakao.maps 객체 없음! SDK 로드 상태 확인', true);
-        return;
-      }
+      const sdk = document.getElementById('kakao-sdk');
+      sdk.onerror = () => console.error('Kakao SDK 로드 실패! appkey/네트워크 확인.');
+      if (!window.kakao || !window.kakao.maps){ return; }
       kakao.maps.load(initAfterSdk);
     });
   </script>

@@ -239,12 +239,13 @@ class NavigationPage(QWidget):
         self.map_initialized = False
         self.current_location = None
 
+        self.is_map_locked = False
+
         self.bg = QLabel(self); self.bg.setAlignment(Qt.AlignCenter)
         self.pm_bg = self._load_pix(self.assets / "bg" / "nav_bg.png")
 
         self.map_view = QWebEngineView(self)
         self.map_view.setPage(QWebEnginePage(self))
-        # loadFinished 시그널 연결은 showEvent에서 맵을 로드하므로 제거해도 무방합니다.
 
         self.camera_view = QLabel(self); self.camera_view.setStyleSheet("background-color: black;")
         self.lbl_hangul = QLabel("", self)
@@ -267,6 +268,23 @@ class NavigationPage(QWidget):
             b.setStyleSheet("border:none;background:transparent"); b.setCursor(Qt.PointingHandCursor); b.clicked.connect(cb)
             return b
 
+        # <<< 추가: '현위치' 버튼 생성
+        self.btn_recenter = QPushButton("현위치", self)
+        self.btn_recenter.setStyleSheet("""
+            QPushButton { 
+                background-color: rgba(255, 255, 255, 0.9); 
+                color: #333; 
+                border: 1px solid #aaa; 
+                border-radius: 8px; 
+                padding: 8px 12px;
+                font-size: 14px;
+            }
+            QPushButton:pressed { background-color: #e0e0e0; }
+        """)
+        self.btn_recenter.setCursor(Qt.PointingHandCursor)
+        self.btn_recenter.clicked.connect(self._unlock_and_recenter_map)
+        self.btn_recenter.hide() # 평소에는 숨겨둠
+
         self.btn_home = mk_icon("home.png", self.on_home)
         self.btn_nav  = mk_icon("nav_b.png", lambda: None)
         self.btn_sos  = mk_icon("sos.png", self.on_sos)
@@ -284,21 +302,27 @@ class NavigationPage(QWidget):
 
     def showEvent(self, event):
         super().showEvent(event)
-        # 페이지가 보일 때마다 지도를 새로고침하여 현재 위치를 반영
-        print("[NavPage] Showing. Loading initial map with current location.")
-        self.load_initial_map()
-        self.map_initialized = True
-
+        self.is_map_locked = False 
+        self.btn_recenter.hide()
+        
+        if not self.map_initialized:
+            print("[NavPage] Showing. Loading initial map.")
+            self.load_initial_map()
+            self.map_initialized = True
+        
         if self.sign_engine:
             QTimer.singleShot(1000, self.sign_engine.switch_to_hangul_mode)
 
     @Slot(float, float)
     def set_location(self, lat: float, lng: float):
         """main.py로부터 실시간 위치를 받는 슬롯"""
+        # <<< 수정: 항상 현재 위치는 저장해두되, 지도 고정 상태에서는 지도 이동을 막음
         self.current_location = (lat, lng)
-        # 페이지가 이미 떠 있는 상태에서 위치가 갱신되면 지도 새로고침
-        if self.isVisible() and self.map_initialized:
-            # map.html에 추가할 setStartLocation 함수 호출
+        if self.is_map_locked:
+            return # 지도 고정 상태일 때는 여기서 실행 중단
+
+        if self.map_initialized:
+            # map.html의 setStartLocation 함수를 호출하여 실시간 위치 표시
             js_code = f"setStartLocation({lat}, {lng});"
             self.map_view.page().runJavaScript(js_code)
 
@@ -318,6 +342,14 @@ class NavigationPage(QWidget):
     def update_route(self, destination: str):
         """입력된 목적지로 경로 탐색을 요청합니다."""
         if not destination: return
+
+        self.is_map_locked = True
+        self.btn_recenter.show()
+        
+        print(f"[NavPage] '{destination}' 경로 탐색 요청 및 지도 고정")
+        js_code = f"drawRouteToDestination('{destination}');"
+        self.map_view.page().runJavaScript(js_code)
+        self.lbl_hangul.setText(f"경로: {destination}")
         
         print(f"[NavPage] '{destination}' 경로 탐색 요청")
         
@@ -354,6 +386,21 @@ class NavigationPage(QWidget):
         s = min(bw/w0, bh/h0); w, h = int(w0*s), int(h0*s)
         return QRect(box.x()+(bw-w)//2, box.y()+(bh-h)//2, w, h)
 
+    @Slot()
+    def _unlock_and_recenter_map(self):
+        """지도 고정을 해제하고, 가장 최근 위치로 지도를 이동시킨 후 실시간 추적 재개"""
+        self.is_map_locked = False
+        self.btn_recenter.hide()
+        self.lbl_hangul.setText("목적지를 입력하세요") # 안내 문구 초기화
+        
+        if self.current_location:
+            print("[NavPage] 지도 고정 해제 및 현위치로 복귀")
+            # 저장해둔 가장 최신 위치로 즉시 이동
+            self.set_location(self.current_location[0], self.current_location[1])
+        else:
+            # 위치 정보가 없을 경우 그냥 지도 초기화
+            self.load_initial_map()
+            
     def _map_from_design(self, fit, x, y, w=None, h=None, *, right=None, bottom=None):
         sx, sy = fit.width()/self.BASE_W, fit.height()/self.BASE_H
         X, Y = fit.x()+int(round(x*sx)), fit.y()+int(round(y*sy))
@@ -401,6 +448,8 @@ class NavigationPage(QWidget):
         self.chat.raise_()
         self.lbl_hangul.raise_()
         self.camera_view.raise_()
+        self.btn_recenter.move(30, 95)
+        self.btn_recenter.raise_()
         for b in (self.btn_home, self.btn_nav, self.btn_sos):
             b.raise_()
 

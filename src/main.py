@@ -99,189 +99,156 @@ class App(QWidget):
         self.setFixedSize(1024, 600)
         self.current_location = None
 
-        # --- 1. Core Engine/Reader Setup ---
+        # --- 1. Core Engine / Reader 설정 ---
+        # SignEngine 설정
         self.sign_engine = SignEngine()
         self.engine_thread = QThread()
         self.sign_engine.moveToThread(self.engine_thread)
         self.engine_thread.started.connect(self.sign_engine.initialize_and_run)
 
-        # self.gps_reader = GPSReader(port='/dev/ttyACM0')
-        # self.gps_thread = QThread()
-        # self.gps_reader.moveToThread(self.gps_thread)
-        # self.gps_thread.started.connect(self.gps_reader.run)
-        
-        # --- GPS (skippable via env) ---
-        self.gps_thread = QThread()  # always create so closeEvent can safely check isRunning()
-        # if not DISABLE_GPS:
-        #     self.gps_reader = GPSReader(port=GPS_PORT)
-        #     self.gps_reader.moveToThread(self.gps_thread)
-        #     self.gps_thread.started.connect(self.gps_reader.run)
-        # else:
-        #     self.gps_reader = None
-        #     print("[GPS] Disabled via DISABLE_GPS env; skipping serial port open.")
-        #     # 선택: 개발 편의를 위해 대략적 현재 위치를 한 번 주입 (서울역)
-        #     self._update_location(37.554678, 126.970609)
+        # GPSClient 설정 (기존 GPSReader 관련 코드는 모두 정리)
+        self.gps_thread = QThread()
         self.gps_client = GPSClient()
         self.gps_client.moveToThread(self.gps_thread)
         self.gps_thread.started.connect(self.gps_client.run)
         
-        # --- 2. UI Widget Setup ---
+        # --- 2. UI 위젯 설정 ---
         root = QHBoxLayout(self)
         self.stack = QStackedWidget()
         root.addWidget(self.stack)
 
-        # --- 3. Central Signal Connections ---
-        self.sign_engine.gesture_recognized.connect(self._handle_gesture)
-        self.sign_engine.hangul_input_finished.connect(self._on_hangul_finished)
-        self.sign_engine.session_finished.connect(self._on_session_finished)
-        
-        # self.gps_reader.new_location.connect(self._update_location)
-        # if self.gps_reader:
-        #     self.gps_reader.new_location.connect(self._update_location)
-        self.gps_client.new_location.connect(self._update_location)
-        
-        self.stack.currentChanged.connect(self._on_page_changed)
-
-        # --- 4. Start Background Threads ---
-        self.engine_thread.start()
-        self.gps_thread.start()
-        # if self.gps_reader:
-        #     self.gps_thread.start()
-            
-        print("✅ Sign Engine and GPS Threads started.")
-        self._nav_pending = False  # arrival 처리 중복 방지
-
-        # --- 5. Page Creation ---
+        # --- 3. 페이지 생성 ---
+        # 페이지 전환을 위한 람다 함수
         def go(name): return lambda: self.stack.setCurrentWidget(self.pages[name])
         
         self.pages = {}
         
         self.pages["welcome"] = WelcomePage(ASSETS, on_start=go("recognition"), fonts=fonts, sign_engine=self.sign_engine)
         self.pages["recognition"] = RecognitionPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_sos=go("sos"), sign_engine=self.sign_engine)
+        
+        # 각 페이지를 인스턴스 변수로 저장하여 쉽게 접근하도록 변경
         self.navigation_page = NavigationPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_sos=go("sos"), fonts=fonts, sign_engine=self.sign_engine)
-        self.pages["navigation"] = self.navigation_page        
+        self.pages["navigation"] = self.navigation_page
+        
         self.description_page = DescriptionPage(ASSETS, on_home=go("welcome"), on_recog=go("recognition"), on_sos=go("sos"), fonts=fonts, sign_engine=self.sign_engine)
         self.pages["description"] = self.description_page
+        
         self.search_page = SearchPage(ASSETS, on_home=go("welcome"), on_recog=go("recognition"), on_sos=go("sos"), fonts=fonts, sign_engine=self.sign_engine)
         self.pages["search"] = self.search_page
-        # self.pages["sos"] = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("welcome"))
-        self.sos_page = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("welcome"))
+        # <<< 추가: search_page가 main_app의 정보(current_location)에 접근할 수 있도록 self 전달
+        if hasattr(self.search_page, 'set_main_app'):
+            self.search_page.set_main_app(self)
+
+        self.sos_page = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("recognition"))
         self.pages["sos"] = self.sos_page
-        self.pages["voice"] = VoicePage(ASSETS, fonts=fonts, sign_engine=self.sign_engine)
+        
+        self.voice_page = VoicePage(ASSETS, fonts=fonts, sign_engine=self.sign_engine)
+        self.pages["voice"] = self.voice_page
         
         for p in self.pages.values(): self.stack.addWidget(p)
         self.stack.setCurrentWidget(self.pages["welcome"])
         
-        # --- Connect sign→text to chat UIs ---
-        # 1) 제스처/한글 완료 → 인식 화면 채팅에 사용자 메시지로 추가
-        # try:
-        #     self.sign_engine.gesture_recognized.connect(self.pages["recognition"].append_user_text)
-        # except Exception:
-        #     pass
+        # --- 4. 중앙 시그널 연결 ---
+        self.sign_engine.gesture_recognized.connect(self._handle_gesture)
+        self.sign_engine.hangul_input_finished.connect(self._on_hangul_finished)
+        self.sign_engine.session_finished.connect(self._on_session_finished)
+        
+        # GPS 신호를 중앙 관리 슬롯에 연결
+        self.gps_client.new_location.connect(self._update_location)
+        
+        self.stack.currentChanged.connect(self._on_page_changed)
+        
+        # 수어->텍스트 변환 결과를 각 페이지의 채팅창에 연결
         try:
             self.sign_engine.hangul_input_finished.connect(self.pages["recognition"].append_user_text)
             self.sign_engine.hangul_input_finished.connect(self.pages["description"].append_user_text)
             self.sign_engine.hangul_input_finished.connect(self.pages["search"].append_user_text)
-            self.sign_engine.hangul_result_updated.connect(self.pages["voice"]._on_hangul_progress)
-            self.sign_engine.hangul_input_finished.connect(self.pages["voice"].on_hangul_final)
+            self.sign_engine.hangul_result_updated.connect(self.voice_page._on_hangul_progress)
+            self.sign_engine.hangul_input_finished.connect(self.voice_page.on_hangul_final)
+            self.voice_page.playback_finished.connect(self._on_voice_playback_finished) # <<< 복원
+        except Exception as e:
+            print(f"[ERROR] Signal connection failed: {e}")
 
+        # --- 5. 백그라운드 스레드 시작 ---
+        self.engine_thread.start()
+        self.gps_thread.start()
+        print("✅ Sign Engine and GPS Client Threads started.")
+        self._nav_pending = False
 
-        except Exception:
-            pass
-        
-        try:
-            self.sign_engine.gesture_recognized.disconnect(self.pages["recognition"].append_user_text)
-        except Exception:
-            pass
-
-    # --- Central Slot Methods ---
+    # --- 중앙 제어 슬롯 메서드 ---
     @Slot(int)
     def _on_page_changed(self, index):
         current_page = self.stack.widget(index)
-        print(f"[App] Page changed to: {type(current_page).__name__}")
+        page_name = type(current_page).__name__
+        print(f"[App] Page changed to: {page_name}")
 
-        if isinstance(current_page, (WelcomePage, SOSPage)):
+        if page_name in ("WelcomePage", "SOSPage"):
             self.sign_engine.switch_to_gesture_mode()
-        elif isinstance(current_page, RecognitionPage):
+        elif page_name == "RecognitionPage":
             self._nav_pending = False 
             self.sign_engine.switch_to_gesture_mode()
             self.sign_engine.start_gesture_with_delay()
-        elif isinstance(current_page, (NavigationPage, DescriptionPage, SearchPage, VoicePage)):
+        else: # NavigationPage, DescriptionPage, SearchPage, VoicePage
             self.sign_engine.start_hangul_with_delay()
 
-    def _go_to_navigation(self):
-        self.stack.setCurrentWidget(self.pages["navigation"])
-        self._nav_pending = False
+    # <<< 추가: VoicePage 음성 출력이 끝나면 제스처 모드로 전환
+    @Slot()
+    def _on_voice_playback_finished(self):
+        print("[App] Voice playback finished. Switching to gesture mode.")
+        if self.sign_engine:
+            self.sign_engine.switch_to_gesture_mode()
 
-    def _go_to_description(self):
-        self.stack.setCurrentWidget(self.pages["description"])
-
-    def _go_to_search(self):
-        self.stack.setCurrentWidget(self.pages["search"])
-        
-    def _go_to_voice(self):
-        self.stack.setCurrentWidget(self.pages["voice"])
-        
+    def _go_to_navigation(self): self.stack.setCurrentWidget(self.navigation_page)
+    def _go_to_description(self): self.stack.setCurrentWidget(self.description_page)
+    def _go_to_search(self): self.stack.setCurrentWidget(self.search_page)
+    def _go_to_voice(self): self.stack.setCurrentWidget(self.voice_page)
+    def _go_to_sos(self): self.stack.setCurrentWidget(self.sos_page)
 
     @Slot(str)
     def _handle_gesture(self, gesture: str):
         current_page = self.stack.currentWidget()
-        
-        if isinstance(current_page, WelcomePage) and gesture == ACTIVATION_GESTURE:
+        page_name = type(current_page).__name__
+
+        # <<< 추가: delete 제스처는 항상 인식 페이지로 돌아감
+        if gesture == 'delete':
+            print(f"[App] 'delete' gesture recognized! Returning to Recognition Page.")
+            self.stack.setCurrentWidget(self.pages["recognition"])
+            return
+
+        if page_name == "WelcomePage" and gesture == ACTIVATION_GESTURE:
             print(f"[App] Activation gesture '{gesture}' detected! Switching to Recognition Page.")
             self.stack.setCurrentWidget(self.pages["recognition"])
             
-        # elif isinstance(current_page, RecognitionPage) and gesture in COMMAND_GESTURES:
-        #     print(f"[App] Command gesture '{gesture}' detected!")
-        #     if gesture == 'arrival':
-        #         self.stack.setCurrentWidget(self.pages["navigation"])
-        elif isinstance(current_page, RecognitionPage) and gesture in COMMAND_GESTURES:
-            # arrival: 채팅(사용자→봇) 먼저, 2초 지연 전환
+        elif page_name == "RecognitionPage" and gesture in COMMAND_GESTURES:
+            page = self.pages["recognition"]
+            
             if gesture == 'arrival':
                 if self._nav_pending: return
                 self._nav_pending = True
-                page = self.pages["recognition"]
-                try:
-                    page.append_user_text("경로 설정")
-                    QTimer.singleShot(100, lambda: page.append_bot_text("Navigation 화면으로 이동합니다!"))
-                except Exception:
-                    pass
+                page.append_user_text("경로 설정")
+                QTimer.singleShot(100, lambda: page.append_bot_text("Navigation 화면으로 이동합니다!"))
                 QTimer.singleShot(2000, self._go_to_navigation)
-                return
             
             elif gesture == 'description':
-
-                page = self.pages["recognition"]
-                try:
-                    page.append_user_text("정보 검색")
-                    QTimer.singleShot(100, lambda: page.append_bot_text("정보 검색 화면으로 이동합니다!"))
-                except Exception:
-                    pass
+                page.append_user_text("정보 검색")
+                QTimer.singleShot(100, lambda: page.append_bot_text("정보 검색 화면으로 이동합니다!"))
                 QTimer.singleShot(2000, self._go_to_description)
-                return    
             
             elif gesture == 'traffic':
-
-                page = self.pages["recognition"]
-                try:
-                    page.append_user_text("주변 인프라 탐색")
-                    QTimer.singleShot(100, lambda: page.append_bot_text("주변 인프라 탐색 화면으로 이동합니다!"))
-                except Exception:
-                    pass
+                page.append_user_text("주변 인프라 탐색")
+                QTimer.singleShot(100, lambda: page.append_bot_text("주변 인프라 탐색 화면으로 이동합니다!"))
                 QTimer.singleShot(2000, self._go_to_search)
-                return    
             
             elif gesture == 'voice':
-                page = self.pages["recognition"]
-                try:
-                    page.append_user_text("음성 안내")
-                    QTimer.singleShot(100, lambda: page.append_bot_text("음성 안내를 시작합니다!"))
-                except Exception:
-                    pass
-                QTimer.singleShot(2000, self._go_to_voice)                
-                # 음성 안내 기능은 미구현 상태이므로 페이지 전환 없이 제스처 모드 유지
-                return
-        
+                page.append_user_text("음성 안내")
+                QTimer.singleShot(100, lambda: page.append_bot_text("음성 안내를 시작합니다!"))
+                QTimer.singleShot(2000, self._go_to_voice)
+
+            # <<< 추가: emergency 제스처로 SOS 페이지 이동
+            elif gesture == 'emergency':
+                page.append_user_text("긴급구조")
+                QTimer.singleShot(100, lambda: page.append_bot_text("긴급구조 요청을 시작합니다!"))
+                QTimer.singleShot(2000, self._go_to_sos)
     
     @Slot(str)
     def _on_hangul_finished(self, final_text: str):
@@ -291,56 +258,43 @@ class App(QWidget):
         elif isinstance(current_page, DescriptionPage):
             self.description_page.search_for(final_text)
         elif isinstance(current_page, SearchPage):
+            # <<< 수정: search_page는 main_app의 current_location을 직접 참조하므로 좌표 전달 불필요
             self.search_page.search_for(final_text)
 
     @Slot()
     def _on_session_finished(self):
-        """'end' 제스처가 1초간 유지되어 세션을 종료/완료할 때 호출됨"""
         current_page = self.stack.currentWidget()
         page_name = type(current_page).__name__
         print(f"[App] Session finished signal received on {page_name}.")
 
-        if isinstance(current_page, NavigationPage):
+        if page_name in ("NavigationPage", "DescriptionPage", "SearchPage"):
             final_text = self.sign_engine.get_hangul_result()
-            print(f"[App] Hangul input finished with: '{final_text}'. Updating route.")
-
-            self.navigation_page.update_route(final_text)
-            self.sign_engine.switch_to_gesture_mode()
-
-        elif isinstance(current_page, DescriptionPage):
-            final_text = self.sign_engine.get_hangul_result()
-            print(f"[App] Hangul input finished with: '{final_text}'. Searching for info.")
-            self.description_page.search_for(final_text)
-            self.sign_engine.switch_to_gesture_mode()
-
-        elif isinstance(current_page, SearchPage):
-            final_text = self.sign_engine.get_hangul_result()
-            print(f"[App] Hangul input finished with: '{final_text}'. Searching for info.")
-            self.search_page.search_for(final_text)
+            print(f"[App] Hangul input finished with: '{final_text}'.")
+            if page_name == "NavigationPage": self.navigation_page.update_route(final_text)
+            elif page_name == "DescriptionPage": self.description_page.search_for(final_text)
+            elif page_name == "SearchPage": self.search_page.search_for(final_text)
             self.sign_engine.switch_to_gesture_mode()
             
-        elif isinstance(current_page, VoicePage):
-            try:
-                self.pages["voice"].on_end_gesture()
-            except Exception as e:
-                print("[App] VoicePage end gesture handling error:", e)
+        elif page_name == "VoicePage":
+            if hasattr(self.voice_page, 'on_end_gesture'):
+                self.voice_page.on_end_gesture()
 
-        else:
+        else: # Welcome, Recognition, SOS 등
             print("[App] Returning to Welcome Page.")
             self.stack.setCurrentWidget(self.pages["welcome"])
         
     @Slot(float, float)
     def _update_location(self, lat, lng):
-        """GPSClient로부터 새 위치를 받으면 호출되는 중앙 슬롯"""
+        """ <<< 수정: GPSClient로부터 새 위치를 받아 모든 관련 페이지에 전파하는 중앙 슬롯 """
         self.current_location = (lat, lng)
-        # SOS 페이지가 존재하면 위치 업데이트
-        if hasattr(self, 'sos_page'):
+        
+        # 각 페이지에 set_location 메서드가 있는지 확인하고 안전하게 호출
+        if hasattr(self, 'sos_page') and hasattr(self.sos_page, 'set_location'):
             self.sos_page.set_location(lat, lng)
-        # Navigation 페이지가 존재하면 위치 업데이트 (필요 시)
-        if hasattr(self, 'navigation_page'):
-            # navigation_page에도 set_location 메서드를 추가해야 함
-            if hasattr(self.navigation_page, 'set_location'):
-                self.navigation_page.set_location(lat, lng)
+        if hasattr(self, 'navigation_page') and hasattr(self.navigation_page, 'set_location'):
+            self.navigation_page.set_location(lat, lng)
+        if hasattr(self, 'search_page') and hasattr(self.search_page, 'set_location'):
+            self.search_page.set_location(lat, lng)
 
     def closeEvent(self, event):
         print("Main window closing. Shutting down all threads.")
