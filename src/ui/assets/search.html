@@ -32,9 +32,52 @@
 <body>
   <div id="map"></div>
   <div id="diag" hidden></div>
-
-  <!-- autoload=false: onload 이후 kakao.maps.load에서 init -->
   <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&libraries=services&autoload=false"></script>
+  <script>
+    let map; // 전역 변수로 map 선언
+    let curOverlay = null; // 마커 오버레이를 저장할 전역 변수
+
+    
+    // ==========================================================
+    // Python(sos.py)에서 호출하기 위해 새로 추가된 함수
+    // ==========================================================
+    function updateCurrentLocation(lat, lng) {
+      if (!map) return;
+      const pos = new kakao.maps.LatLng(lat, lng);
+      map.setCenter(pos);
+      // 기존 마커 업데이트 함수 재사용
+      updateCurrentMarker(pos);
+    }
+    
+    const $diag = document.getElementById('diag');
+    // ... (say, clearCurrentMarker 함수 등은 기존과 동일)
+    
+    // ===== 현재 위치 표시 함수 (전역에서 접근 가능하도록 유지) =====
+    function updateCurrentMarker(pos, accuracy=null) {
+        if (curOverlay) { curOverlay.setMap(null); }
+        const html = '<div class="loc-pulse red"></div>';
+        curOverlay = new kakao.maps.CustomOverlay({ position: pos, content: html, yAnchor: 1, zIndex: 1000 });
+        curOverlay.setMap(map);
+        // accuracyCircle 로직은 현재 사용하지 않으므로 생략 가능
+    }
+
+    kakao.maps.load(() => {
+      // 0) 지도 먼저 (흰 화면 방지)
+      const fallback = new kakao.maps.LatLng(37.5665, 126.9780);
+      // 전역 변수 map에 할당
+      map = new kakao.maps.Map(document.getElementById('map'), { center: fallback, level: 5 });
+
+      // 기존의 URL 파라미터나 Geolocation을 통한 위치 결정 로직은
+      // sos.py에서 직접 위치를 주입하므로, 여기서는 초기 마커만 표시하거나 비워둘 수 있습니다.
+      updateCurrentMarker(fallback);
+      say("SOS 위치 수신 대기 중...");
+    });
+  </script>
+</body>
+</html>
+
+<!-- autoload=false: onload 이후 kakao.maps.load에서 init -->
+  <!-- <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&libraries=services&autoload=false"></script>
   <script>
     const $diag = document.getElementById('diag');
     const say = (...m) => { console.log('[SEARCH]', ...m); $diag.hidden=false; $diag.textContent = m.join(' '); };
@@ -135,4 +178,4 @@
     });
   </script>
 </body>
-</html>
+</html> -->

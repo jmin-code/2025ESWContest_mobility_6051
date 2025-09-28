@@ -15,6 +15,8 @@ class NavigationPage(QWidget):
         self.fonts = fonts or {}; self.sign_engine = sign_engine
         self.seoul_station_coords = (37.554678, 126.970609)
         self.map_initialized = False
+        self.current_location = None # 현재 위치 저장 변수 추가
+        
 
         self.bg = QLabel(self); self.bg.setAlignment(Qt.AlignCenter)
         self.pm_bg = self._load_pix(self.assets / "bg" / "nav_bg.png")
@@ -84,17 +86,36 @@ class NavigationPage(QWidget):
         else:
             print("[NavPage] Map loading failed.")
 
+    @Slot(float, float)
+    def set_location(self, lat: float, lng: float):
+        """main.py로부터 실시간 위치를 받는 슬롯"""
+        self.current_location = (lat, lng)
+        # 지도가 초기화되었고, 아직 경로 탐색 전이라면 현재 위치를 표시
+        if self.map_initialized and self.lbl_hangul.text() == "목적지를 입력하세요":
+            js_code = f"setCenterAndMarker({lat}, {lng});"
+            self.map_view.page().runJavaScript(js_code)
+
+    # def load_initial_map(self):
+    #     lat, lng = self.seoul_station_coords
+    #     base = "http://localhost:5050/map.html"
+    #     url = QUrl(f"{base}?sLat={lat}&sLng={lng}")
+    #     self.map_view.load(url)
+    #     self.lbl_hangul.setText("목적지를 입력하세요")
     def load_initial_map(self):
-        lat, lng = self.seoul_station_coords
-        base = "http://localhost:5050/map.html"
-        url = QUrl(f"{base}?sLat={lat}&sLng={lng}")
-        self.map_view.load(url)
+        # index.html을 로드하도록 수정
+        self.map_view.load(QUrl("http://localhost:5050/index.html"))
         self.lbl_hangul.setText("목적지를 입력하세요")
 
     def update_route(self, destination: str):
         if not destination: return
-        print(f"[NavPage] Updating route to: {destination}")
-        js_code = f"drawRouteToDestination('{destination}');"
+        
+        # 실시간으로 받은 현재 위치를 출발지로 사용, 없으면 기본값(서울역) 사용
+        start_lat, start_lng = self.current_location if self.current_location else self.seoul_station_coords
+        
+        print(f"[NavPage] '{destination}' 경로 탐색. 출발지: ({start_lat}, {start_lng})")
+        
+        # index.html에 새로 추가할 JS 함수를 호출하며 출발지와 목적지 전달
+        js_code = f"findAndDisplayRoute('{destination}', {start_lat}, {start_lng});"
         self.map_view.page().runJavaScript(js_code)
         self.lbl_hangul.setText(f"경로: {destination}")
 

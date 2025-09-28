@@ -340,6 +340,6 @@ class RecognitionPage(QWidget):
         self._status_current = state
         self._apply_status_pixmap()
 
-    def _blink_recognized(self, ms: int = 2300):  # 2s 전환 + 여유
+    def _blink_recognized(self, ms: int = 2300): 
         self._set_status("recognized")
         self._status_timer.start(ms)

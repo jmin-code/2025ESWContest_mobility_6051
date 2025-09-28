@@ -166,7 +166,7 @@
 
   <script>
     let map; // 지도 객체를 저장할 전역 변수
-
+    let currentMarker = null;
     // [디버깅] 화면에 로그를 남기는 함수
     const logDiag = (msg, isError = false) => {
       const box = document.getElementById('diag');

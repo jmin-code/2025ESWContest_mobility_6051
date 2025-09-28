@@ -6,6 +6,7 @@ import threading
 import http.server
 import functools
 import time
+import requests
 
 # --- Path Setup ---
 SRC_DIR = Path(__file__).resolve().parent
@@ -14,7 +15,7 @@ sys.path.insert(0, str(SRC_DIR))
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedWidget, QHBoxLayout
 from PySide6.QtGui import QFontDatabase, QFont
-from PySide6.QtCore import Slot, QThread, QTimer
+from PySide6.QtCore import Slot, QThread, QTimer,Signal, QObject
 
 DISABLE_GPS = os.getenv("DISABLE_GPS", "").lower() in {"1", "true", "yes", "on"}
 GPS_PORT = os.getenv("GPS_PORT", "/dev/ttyACM0")
@@ -56,6 +57,38 @@ def start_web_server(host='localhost', port=5050, directory='.'):
     print(f"✅ Starting web server at http://{host}:{port}, serving from {directory}")
     httpd.serve_forever()
 
+class GPSClient(QObject):
+    """
+    백그라운드에서 gps.py 서버에 접속해 데이터를 가져오고,
+    PySide6 UI 스레드로 안전하게 신호를 보내는 역할.
+    """
+    new_location = Signal(float, float) # (lat, lng) 신호 정의
+
+    def __init__(self, url="http://127.0.0.1:6051/api/gps"):
+        super().__init__()
+        self._url = url
+        self._running = False
+
+    def run(self):
+        self._running = True
+        print(f"✅ GPS 클라이언트 시작. 서버 polling: {self._url}")
+        while self._running:
+            try:
+                response = requests.get(self._url, timeout=1)
+                if response.status_code == 200:
+                    data = response.json()
+                    if "lat" in data and "lon" in data:
+                        self.new_location.emit(data["lat"], data["lon"])
+                # else:
+                #     print(f"[GPSClient] 서버 응답 오류: {response.status_code}") # 디버깅용
+            except requests.RequestException:
+                # print("[GPSClient] 서버 연결 실패. gps.py가 실행 중인지 확인하세요.") # 디버깅용
+                pass
+            time.sleep(1) # 1초마다 데이터 요청
+
+    def stop(self):
+        self._running = False
+        print("🛑 GPS 클라이언트 중지.")
 # =========================================================
 # Main App Class
 # =========================================================
@@ -79,15 +112,18 @@ class App(QWidget):
         
         # --- GPS (skippable via env) ---
         self.gps_thread = QThread()  # always create so closeEvent can safely check isRunning()
-        if not DISABLE_GPS:
-            self.gps_reader = GPSReader(port=GPS_PORT)
-            self.gps_reader.moveToThread(self.gps_thread)
-            self.gps_thread.started.connect(self.gps_reader.run)
-        else:
-            self.gps_reader = None
-            print("[GPS] Disabled via DISABLE_GPS env; skipping serial port open.")
-            # 선택: 개발 편의를 위해 대략적 현재 위치를 한 번 주입 (서울역)
-            self._update_location(37.554678, 126.970609)
+        # if not DISABLE_GPS:
+        #     self.gps_reader = GPSReader(port=GPS_PORT)
+        #     self.gps_reader.moveToThread(self.gps_thread)
+        #     self.gps_thread.started.connect(self.gps_reader.run)
+        # else:
+        #     self.gps_reader = None
+        #     print("[GPS] Disabled via DISABLE_GPS env; skipping serial port open.")
+        #     # 선택: 개발 편의를 위해 대략적 현재 위치를 한 번 주입 (서울역)
+        #     self._update_location(37.554678, 126.970609)
+        self.gps_client = GPSClient()
+        self.gps_client.moveToThread(self.gps_thread)
+        self.gps_thread.started.connect(self.gps_client.run)
         
         # --- 2. UI Widget Setup ---
         root = QHBoxLayout(self)
@@ -100,16 +136,17 @@ class App(QWidget):
         self.sign_engine.session_finished.connect(self._on_session_finished)
         
         # self.gps_reader.new_location.connect(self._update_location)
-        if self.gps_reader:
-            self.gps_reader.new_location.connect(self._update_location)
+        # if self.gps_reader:
+        #     self.gps_reader.new_location.connect(self._update_location)
+        self.gps_client.new_location.connect(self._update_location)
         
         self.stack.currentChanged.connect(self._on_page_changed)
 
         # --- 4. Start Background Threads ---
         self.engine_thread.start()
-        # self.gps_thread.start()
-        if self.gps_reader:
-            self.gps_thread.start()
+        self.gps_thread.start()
+        # if self.gps_reader:
+        #     self.gps_thread.start()
             
         print("✅ Sign Engine and GPS Threads started.")
         self._nav_pending = False  # arrival 처리 중복 방지
@@ -127,7 +164,9 @@ class App(QWidget):
         self.pages["description"] = self.description_page
         self.search_page = SearchPage(ASSETS, on_home=go("welcome"), on_recog=go("recognition"), on_sos=go("sos"), fonts=fonts, sign_engine=self.sign_engine)
         self.pages["search"] = self.search_page
-        self.pages["sos"] = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("welcome"))
+        # self.pages["sos"] = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("welcome"))
+        self.sos_page = SOSPage(ASSETS, on_home=go("welcome"), on_nav=go("navigation"), on_send=go("welcome"))
+        self.pages["sos"] = self.sos_page
         self.pages["voice"] = VoicePage(ASSETS, fonts=fonts, sign_engine=self.sign_engine)
         
         for p in self.pages.values(): self.stack.addWidget(p)
@@ -243,8 +282,7 @@ class App(QWidget):
                 # 음성 안내 기능은 미구현 상태이므로 페이지 전환 없이 제스처 모드 유지
                 return
         
-
-
+    
     @Slot(str)
     def _on_hangul_finished(self, final_text: str):
         current_page = self.stack.currentWidget()
@@ -293,21 +331,25 @@ class App(QWidget):
         
     @Slot(float, float)
     def _update_location(self, lat, lng):
+        """GPSClient로부터 새 위치를 받으면 호출되는 중앙 슬롯"""
         self.current_location = (lat, lng)
-        try:
-            self.pages["sos"].set_location(lat, lng)
-        except Exception:
-            pass
-    
+        # SOS 페이지가 존재하면 위치 업데이트
+        if hasattr(self, 'sos_page'):
+            self.sos_page.set_location(lat, lng)
+        # Navigation 페이지가 존재하면 위치 업데이트 (필요 시)
+        if hasattr(self, 'navigation_page'):
+            # navigation_page에도 set_location 메서드를 추가해야 함
+            if hasattr(self.navigation_page, 'set_location'):
+                self.navigation_page.set_location(lat, lng)
+
     def closeEvent(self, event):
         print("Main window closing. Shutting down all threads.")
-        # if hasattr(self, 'gps_reader'): self.gps_reader.stop()
-        if getattr(self, 'gps_reader', None): self.gps_reader.stop()
+        if hasattr(self, 'gps_client'): self.gps_client.stop()
         if hasattr(self, 'sign_engine'): self.sign_engine.stop()
-        
+
         if self.gps_thread.isRunning(): self.gps_thread.quit(); self.gps_thread.wait()
         if self.engine_thread.isRunning(): self.engine_thread.quit(); self.engine_thread.wait()
-        
+
         event.accept()
 
 # --- Application Entry Point ---

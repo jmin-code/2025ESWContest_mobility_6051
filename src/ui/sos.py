@@ -9,6 +9,11 @@ from PySide6.QtWidgets import QWidget, QLabel, QPushButton
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage
 
+
+# ===== 기본 좌표 (서울 시청 근처) =====
+DEFAULT_LATITUDE = 37.4505    # 예: 서울 위도
+DEFAULT_LONGITUDE = 126.6572  # 예: 서울 경도
+
 class SOSPage(QWidget):
     """
     배경(sos_bg.png)에 카드가 이미 포함되어 있으므로 별도 카드 위젯을 만들지 않는다.
@@ -99,15 +104,33 @@ class SOSPage(QWidget):
         QTimer.singleShot(0, self._load_initial_map)
 
     # ========== 외부 API ==========
+    # @Slot(float, float)
+    # def set_location(self, lat: float, lng: float):
+    #     self._latlng = (lat, lng)
+    #     ns = "N" if lat >= 0 else "S"
+    #     ew = "E" if lng >= 0 else "W"
+    #     self.lat_label.setText(f"Latitude: {abs(lat):.4f}° {ns}")
+    #     self.lng_label.setText(f"Longitude: {abs(lng):.4f}° {ew}")
+    #     if self._map_ready:
+    #         self._center_map(lat, lng)
     @Slot(float, float)
     def set_location(self, lat: float, lng: float):
+        """GPS로부터 새로운 위치를 받으면 호출되는 메서드"""
+        if self._latlng == (lat, lng):
+            return
+        
         self._latlng = (lat, lng)
         ns = "N" if lat >= 0 else "S"
         ew = "E" if lng >= 0 else "W"
         self.lat_label.setText(f"Latitude: {abs(lat):.4f}° {ns}")
         self.lng_label.setText(f"Longitude: {abs(lng):.4f}° {ew}")
+
+        # if self._map_ready:
+        #     # 자바스크립트 함수 호출
+        #     self._center_map(lat, lng, place_marker=True)
         if self._map_ready:
-            self._center_map(lat, lng)
+            # search.html의 자바스크립트 함수 호출
+            self._update_map_location(lat, lng)
 
     # ========== 내부 로직 ==========
     def _font(self, size: int, bold: bool=False):
@@ -120,38 +143,61 @@ class SOSPage(QWidget):
         if self._initial_loaded:
             return
         self._initial_loaded = True
-        lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
-        # sos.html 우선, 없으면 map.html
-        def url(base):
-            q = QUrl(base)
-            q.setQuery(f"cLat={lat}&cLng={lng}&mode=sos")
-            return q
-        self.web.load(url("http://localhost:5050/sos.html"))
+        # lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
+        # # sos.html 우선, 없으면 map.html
+        # def url(base):
+        #     q = QUrl(base)
+        #     q.setQuery(f"cLat={lat}&cLng={lng}&mode=sos")
+        #     return q
+        # self.web.load(url("http://localhost:5050/sos.html"))
+        self.web.load(QUrl(f"http://localhost:5050/search.html"))
 
+    # @Slot(bool)
+    # def _on_map_loaded(self, ok: bool):
+    #     if not ok:
+    #         lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
+    #         self.web.load(QUrl(f"http://localhost:5050/map.html?cLat={lat}&cLng={lng}&mode=sos"))
+    #         return
+    #     self._map_ready = True
+    #     lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
+    #     self._center_map(lat, lng, place_marker=True)
+
+    # def _center_map(self, lat: float, lng: float, place_marker: bool=True):
+    #     js = []
+    #     if place_marker:
+    #         js += [
+    #             f"try{{ showSOS({lat},{lng}); }}catch(e){{}}",
+    #             f"try{{ centerAndMark({lat},{lng}); }}catch(e){{}}",
+    #             f"try{{ setCenter({lat},{lng}); addMarker({lat},{lng}); }}catch(e){{}}",
+    #         ]
+    #     else:
+    #         js += [
+    #             f"try{{ centerMap({lat},{lng}); }}catch(e){{}}",
+    #             f"try{{ setCenter({lat},{lng}); }}catch(e){{}}",
+    #         ]
+    #     self.web.page().runJavaScript(";".join(js))
     @Slot(bool)
     def _on_map_loaded(self, ok: bool):
         if not ok:
-            lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
-            self.web.load(QUrl(f"http://localhost:5050/map.html?cLat={lat}&cLng={lng}&mode=sos"))
+            print("[SOS] 맵 로드 실패!")
             return
         self._map_ready = True
-        lat, lng = self._latlng if self._latlng else (37.554678, 126.970609)
-        self._center_map(lat, lng, place_marker=True)
+        # 지도가 로드된 후, 실제 위치가 있으면 해당 위치로, 없으면 기본 위치로 중앙 설정
+        lat, lng = self._latlng if self._latlng else (DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
+        self._update_map_location(lat, lng)
+
+    def _update_map_location(self, lat: float, lng: float):
+        # search.html에 새로 추가할 JS 함수를 호출
+        js_code = f"updateCurrentLocation({lat}, {lng});"
+        self.web.page().runJavaScript(js_code)
 
     def _center_map(self, lat: float, lng: float, place_marker: bool=True):
-        js = []
+        # 범용 map.html의 JS 함수를 호출하도록 수정
         if place_marker:
-            js += [
-                f"try{{ showSOS({lat},{lng}); }}catch(e){{}}",
-                f"try{{ centerAndMark({lat},{lng}); }}catch(e){{}}",
-                f"try{{ setCenter({lat},{lng}); addMarker({lat},{lng}); }}catch(e){{}}",
-            ]
+            js_code = f"setCenterAndMarker({lat}, {lng});"
         else:
-            js += [
-                f"try{{ centerMap({lat},{lng}); }}catch(e){{}}",
-                f"try{{ setCenter({lat},{lng}); }}catch(e){{}}",
-            ]
-        self.web.page().runJavaScript(";".join(js))
+            js_code = f"setCenter({lat}, {lng});"
+        self.web.page().runJavaScript(js_code)
 
     # ========== 레이아웃 ==========
     def resizeEvent(self, e):
