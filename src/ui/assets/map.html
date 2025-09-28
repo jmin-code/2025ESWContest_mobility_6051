@@ -150,6 +150,12 @@
                 }
             });
         }
+
+        function panToLocation(lat, lng) {
+            if (!map) return;
+            const pos = new kakao.maps.LatLng(lat, lng);
+            map.panTo(pos); // panTo는 부드럽게 지도를 이동시킵니다.
+        }
         
         // 페이지가 로드되면 지도 초기화 함수를 실행
         kakao.maps.load(initMap);

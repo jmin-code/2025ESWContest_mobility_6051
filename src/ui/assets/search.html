@@ -162,6 +162,11 @@
       }
     }
 
+    function panToLocation(lat, lng) {
+        if (!map) return;
+        const pos = new kakao.maps.LatLng(lat, lng);
+        map.panTo(pos);
+    }
     // ===== 부트스트랩 =====
     window.addEventListener('load', () => {
       const sdk = document.getElementById('kakao-sdk');

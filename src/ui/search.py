@@ -85,32 +85,28 @@ class SearchPage(QWidget):
             self.sign_engine.frame_updated.connect(self.set_camera_image)
             self.sign_engine.hangul_result_updated.connect(self.lbl_hangul.setText)
 
+        # <<< 수정: 버튼 클릭 시 _recenter_map_once 슬롯에 연결
         self.btn_recenter = QPushButton("현위치", self)
-        self.btn_recenter.setStyleSheet("""
-            QPushButton { 
-                background-color: rgba(255, 255, 255, 0.9); color: #333; 
-                border: 1px solid #aaa; border-radius: 8px; 
-                padding: 8px 12px; font-size: 14px;
-            }
-            QPushButton:pressed { background-color: #e0e0e0; }
-        """)
+        self.btn_recenter.setStyleSheet("""...""") # 스타일은 위 navigation.py와 동일
         self.btn_recenter.setCursor(Qt.PointingHandCursor)
-        self.btn_recenter.clicked.connect(self._unlock_and_recenter_map)
+        self.btn_recenter.clicked.connect(self._recenter_map_once) # <<< 연결된 함수 변경
         self.btn_recenter.hide()
         self.layout = { "chat":(520,79,260,140), "input":(520,240,265,56), "camera":(520,303,260,160) }
         self._relayout()
 
     def showEvent(self, e):
         super().showEvent(e)
-        # <<< 수정: 페이지가 보일 때마다 지도 고정 해제 및 초기화
+        # 페이지가 보일 때마다 지도 고정 해제 및 실시간 추적 모드로 초기화
         self.is_map_locked = False
         self.btn_recenter.hide()
+        self.lbl_hangul.setText("주변 인프라 탐색")
         
         if not self.view_initialized:
-            print("[SearchPage] Showing → load_initial_view()")
             self.load_initial_view()
             self.view_initialized = True
-        
+        elif self.current_location:
+            self.set_location(*self.current_location)
+
         if self.sign_engine:
             QTimer.singleShot(1000, self.sign_engine.switch_to_hangul_mode)
 
@@ -129,10 +125,9 @@ class SearchPage(QWidget):
     # <<< 추가: main.py로부터 실시간 GPS 좌표를 받는 슬롯
     @Slot(float, float)
     def set_location(self, lat: float, lng: float):
-        # <<< 수정: 항상 현재 위치는 저장하되, 지도 고정 시 UI 업데이트는 생략
         self.current_location = (lat, lng)
         if self.is_map_locked:
-            return
+            return # 고정 상태에서는 자동 이동 안함
 
         if self._map_ready:
             js_code = f"window.updateCurrentLocation({lat}, {lng});"
@@ -140,18 +135,13 @@ class SearchPage(QWidget):
 
     def search_for(self, keyword: str):
         if not self._map_ready or not self.current_location:
-            # 준비 안됐으면 검색 불가
             return
-
-        # <<< 추가: 검색 시작 시 지도 고정 및 현위치 버튼 표시
+        # 검색 시 지도 고정 및 버튼 표시
         self.is_map_locked = True
         self.btn_recenter.show()
             
         lat, lng = self.current_location
-        keyword = keyword.strip()
-        print(f"[SearchPage] SEARCH keyword='{keyword}' at ({lat}, {lng}) and Lock Map")
-        
-        js_code = f"runNearbySearch('{keyword}', {lat}, {lng});"
+        js_code = f"runNearbySearch('{keyword.strip()}', {lat}, {lng});"
         self.web_view.page().runJavaScript(js_code)
         self.lbl_hangul.setText(f"검색: {keyword}")
         try:
@@ -194,6 +184,15 @@ class SearchPage(QWidget):
         x, y, w, h = self.layout[key]
         return self._map_from_design(fit, x, y, w=w, h=h)
 
+    @Slot()
+    def _recenter_map_once(self):
+        """지도 고정 상태는 유지한 채, 현재 위치로 지도를 한번만 이동시킴"""
+        if self.current_location:
+            print("[SearchPage] 지도 고정 상태에서 현위치로 1회 이동")
+            # 새로 추가할 panToLocation JS 함수를 호출
+            js_code = f"panToLocation({self.current_location[0]}, {self.current_location[1]});"
+            self.web_view.page().runJavaScript(js_code)
+            
     @Slot()
     def _unlock_and_recenter_map(self):
         self.is_map_locked = False
