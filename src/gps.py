@@ -13,8 +13,8 @@ app = Flask(__name__)
 # --- 실시간 GPS 데이터를 저장할 변수 ---
 gps_data_lock = threading.Lock()
 latest_gps_data = {
-    "lat": 37.4505,  # 초기값: 인하대학교
-    "lon": 126.6572,
+    "lat": 37.6005,  # 초기값: 인하대학교
+    "lon": 126.72,
     "spd": 0
 }
 
@@ -44,7 +44,7 @@ def read_from_gps(port="/dev/ttyACM0"):
                             latest_gps_data["lon"] = lon
                             latest_gps_data["spd"] = spd
                         
-                        # print(f"🛰️  수신: lat={lat:.6f}, lon={lon:.6f}, spd={spd:.1f} km/h", flush=True) # 디버깅용
+                        print(f"🛰️  수신: lat={lat:.6f}, lon={lon:.6f}, spd={spd:.1f} km/h", flush=True) # 디버깅용
 
                 except (UnicodeDecodeError, ValueError, IndexError):
                     pass

@@ -1,4 +1,4 @@
-<!-- <!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="ko">
 <head>
     <meta charset="UTF-8">
@@ -57,101 +57,6 @@
 
         }
         
-        kakao.maps.load(initMap);
-    </script>
-</body>
-</html> -->
-
-
-<!DOCTYPE html>
-<html lang="ko">
-<head>
-    <meta charset="UTF-8">
-    <title>SignNav Route</title>
-    <style>html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; }</style>
-    <script src="https://dapi.kakao.com/v2/maps/sdk.js?appkey=dc0607361ea2324be6bd1e9dc3f262fe&libraries=services,drawing"></script>
-</head>
-<body>
-    <div id="map"></div>
-    <script>
-        let map;
-        let startCoords;
-        let startMarker = null; // 출발지 마커
-        let destMarker = null;  // 목적지 마커
-        let polyline = null;    // 경로 선
-
-        /** 지도를 초기화하는 함수 */
-        function initMap() {
-            const params = new URLSearchParams(window.location.search);
-            // URL 파라미터에서 초기 출발지 좌표를 읽어옴
-            const sLat = parseFloat(params.get('sLat')) || 37.554678; // 기본값 서울역
-            const sLng = parseFloat(params.get('sLng')) || 126.970609;
-            startCoords = new kakao.maps.LatLng(sLat, sLng);
-
-            const mapContainer = document.getElementById('map');
-            const mapOption = { center: startCoords, level: 5 };
-            map = new kakao.maps.Map(mapContainer, mapOption);
-
-            // 출발지 마커 생성 및 표시
-            startMarker = new kakao.maps.Marker({ position: startCoords, map: map });
-        }
-
-        /** [Python 호출용] 실시간으로 출발지 위치를 업데이트하는 함수 */
-        function setStartLocation(lat, lng) {
-            if (!map || !startMarker) return;
-            
-            startCoords = new kakao.maps.LatLng(lat, lng);
-            startMarker.setPosition(startCoords);
-            map.setCenter(startCoords); // 지도 중심도 현재 위치로 이동
-        }
-
-        /** [Python 호출용] 목적지를 받아 경로를 그리는 함수 */
-        function drawRouteToDestination(destination) {
-            // 이전 경로 정보(마커, 선)가 있다면 제거
-            if (destMarker) destMarker.setMap(null);
-            if (polyline) polyline.setMap(null);
-
-            const places = new kakao.maps.services.Places();
-            places.keywordSearch(destination, (data, status) => {
-                if (status === kakao.maps.services.Status.OK && data.length > 0) {
-                    const place = data[0];
-                    const destCoords = new kakao.maps.LatLng(place.y, place.x);
-                    
-                    // 목적지 마커 생성
-                    destMarker = new kakao.maps.Marker({ position: destCoords, map: map });
-                    
-                    // 출발지와 목적지를 모두 포함하도록 지도 범위 설정
-                    const bounds = new kakao.maps.LatLngBounds();
-                    bounds.extend(startCoords);
-                    bounds.extend(destCoords);
-                    
-                    // OSRM API를 사용한 경로 탐색 (기존 코드와 동일)
-                    const url = `https://router.project-osrm.org/route/v1/driving/${startCoords.getLng()},${startCoords.getLat()};${destCoords.getLng()},${destCoords.getLat()}?overview=full&geometries=geojson`;
-                    fetch(url)
-                        .then(r => r.json())
-                        .then(jsonData => {
-                            if (jsonData.routes && jsonData.routes.length > 0) {
-                                const path = jsonData.routes[0].geometry.coordinates.map(p => new kakao.maps.LatLng(p[1], p[0]));
-                                polyline = new kakao.maps.Polyline({
-                                    path: path,
-                                    strokeWeight: 6,
-                                    strokeColor: '#0066FF',
-                                    strokeOpacity: 0.9,
-                                    map: map
-                                });
-                                map.setBounds(bounds); // 경로가 그려진 후 지도 범위 조정
-                            } else {
-                                alert("경로 정보를 가져올 수 없습니다.");
-                            }
-                        })
-                        .catch(err => console.error("OSRM Fetch Error:", err));
-                } else {
-                    alert(`'${destination}' 목적지를 찾을 수 없습니다.`);
-                }
-            });
-        }
-        
-        // 페이지가 로드되면 지도 초기화 함수를 실행
         kakao.maps.load(initMap);
     </script>
 </body>
