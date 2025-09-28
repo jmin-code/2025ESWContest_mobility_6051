@@ -10,18 +10,17 @@
     #diag{
       position:fixed;left:12px;bottom:12px;background:rgba(255,255,255,0.92);
       border:1px solid #aaa;border-radius:10px;padding:10px 12px;font:13px/1.5 monospace;
-      max-width:560px;max-height:220px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.08);white-space:pre-wrap
+      max-width:580px;max-height:240px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,0.08);white-space:pre-wrap;z-index:1001
     }
-    /* 현재 위치 펄스 표시 (커스텀 오버레이용) */
     .loc-pulse{
       width:14px;height:14px;border-radius:50%;background:#2979ff;box-shadow:0 0 0 rgba(41,121,255,0.6);
-      animation: pulse 2s infinite; border:2px solid #fff
+      animation:pulse 2s infinite;border:2px solid #fff
     }
     .loc-pulse.red{background:#ff1744;box-shadow:0 0 0 rgba(255,23,68,0.5)}
-    @keyframes pulse{
-      0%{box-shadow:0 0 0 0 rgba(41,121,255,0.5)}
-      70%{box-shadow:0 0 0 16px rgba(41,121,255,0)}
-      100%{box-shadow:0 0 0 0 rgba(41,121,255,0)}
+    @keyframes pulse{0%{box-shadow:0 0 0 0 rgba(41,121,255,0.5)}70%{box-shadow:0 0 0 16px rgba(41,121,255,0)}100%{box-shadow:0 0 0 0 rgba(41,121,255,0)}}
+    #badge{
+      position:fixed;right:12px;bottom:12px;background:#111;color:#fff;border-radius:8px;padding:6px 10px;
+      font:12px/1.4 system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial; z-index:1002; opacity:.85
     }
   </style>
   <script id="kakao-sdk"
@@ -31,74 +30,77 @@
 <body>
   <div id="map"></div>
   <div id="diag">진단 로그:</div>
+  <div id="badge">init: …</div>
 
   <script>
-    // ---------- 진단 로그 ----------
-    const logBox = () => document.getElementById('diag');
+    // ===== 진단/유틸 =====
+    const diagEl = () => document.getElementById('diag');
+    const badgeEl = () => document.getElementById('badge');
     function logDiag(msg, isError=false){
-      const time = new Date().toLocaleTimeString();
+      const t = new Date().toLocaleTimeString();
       const icon = isError ? '❌' : '✅';
-      logBox().textContent += `\n${icon} ${time}: ${msg}`;
-      logBox().scrollTop = logBox().scrollHeight;
+      diagEl().textContent += `\n${icon} ${t}: ${msg}`;
+      diagEl().scrollTop = diagEl().scrollHeight;
       (isError ? console.error : console.log)(msg);
     }
+    function setBadge(text){ badgeEl().textContent = `init: ${text}`; }
+
     const sdk = document.getElementById('kakao-sdk');
     sdk.onerror = () => logDiag('Kakao SDK 로드 실패! appkey/네트워크 확인.', true);
 
-    // ---------- 전역 상태 ----------
+    const qs = new URLSearchParams(location.search);
+    function fnum(v){ const x = parseFloat(v); return Number.isFinite(x) ? x : NaN; }
+
+    // ===== 전역 =====
     let map = null;
     let places = null;
     let currentOverlay = null;
     let poiMarkers = [];
     let lastKeyword = '';
     let lastRadius = 2000;
+    const FALLBACK = { lat:37.5665, lng:126.9780 }; // 서울시청
 
-    // ---------- 유틸 ----------
-    const qs = new URLSearchParams(location.search);
-    const fallbackCenter = {lat:37.5665, lng:126.9780}; // 서울시청
-
-    function parseFloatOrNaN(v){ const x = parseFloat(v); return Number.isFinite(x) ? x : NaN; }
-    function clearPoiMarkers(){
-      poiMarkers.forEach(m => m.setMap(null));
-      poiMarkers = [];
-    }
+    // ===== 마커/오버레이 관리 =====
     function setCurrentOverlay(lat, lng, danger=false){
       if (!map) return;
       const pos = new kakao.maps.LatLng(lat, lng);
       if (currentOverlay) currentOverlay.setMap(null);
       currentOverlay = new kakao.maps.CustomOverlay({
-        position: pos,
-        content: `<div class="loc-pulse ${danger?'red':''}"></div>`,
-        yAnchor: 0.5, xAnchor: 0.5, zIndex: 1000
+        position: pos, content:`<div class="loc-pulse ${danger?'red':''}"></div>`,
+        yAnchor:0.5, xAnchor:0.5, zIndex:1000
       });
       currentOverlay.setMap(map);
     }
+    function clearPoiMarkers(){ poiMarkers.forEach(m => m.setMap(null)); poiMarkers = []; }
 
-    // 외부(예: PySide6)에서 호출 가능: 현재 좌표 갱신 + 재검색
+    // ===== 외부에서 주입 가능 API =====
     window.updateCurrentLocation = function(lat, lng){
-      if (!map) { logDiag('map 미초기화 상태에서 updateCurrentLocation 호출됨', true); return; }
+      if (!map){ logDiag('map 미초기화 상태에서 updateCurrentLocation 호출됨', true); return; }
       const center = new kakao.maps.LatLng(lat, lng);
       map.setCenter(center);
       setCurrentOverlay(lat, lng);
       if (lastKeyword) runNearbySearch(lastKeyword, lat, lng, lastRadius);
+      logDiag(`외부 주입 좌표 반영: (${lat}, ${lng})`);
+      setBadge('external-update');
     };
-
     window.setSearchKeyword = function(keyword){
       lastKeyword = (keyword || '').trim();
       logDiag(`키워드 변경: "${lastKeyword}"`);
     };
 
-    // ---------- 검색 ----------
+    // ===== 검색 =====
     function runNearbySearch(keyword, lat, lng, radius=2000){
       if (!places) places = new kakao.maps.services.Places();
       lastKeyword = (keyword || '').trim();
       lastRadius = Number(radius) || 2000;
+
       if (!lastKeyword){
-        logDiag('키워드가 없어 검색을 생략합니다.');
+        logDiag('키워드 없음 → 검색 생략');
         return;
       }
+
       const center = new kakao.maps.LatLng(lat, lng);
-      logDiag(`검색 시작: "${lastKeyword}", 반경=${lastRadius}m, 기준=(${lat.toFixed(5)}, ${lng.toFixed(5)})`);
+      logDiag(`검색 시작: "${lastKeyword}", r=${lastRadius}m, base=(${lat.toFixed(5)}, ${lng.toFixed(5)})`);
 
       clearPoiMarkers();
       const bounds = new kakao.maps.LatLngBounds();
@@ -119,76 +121,79 @@
             map.setBounds(bounds);
             logDiag(`검색 성공: ${data.length}개 결과`);
           } else if (status === kakao.maps.services.Status.ZERO_RESULT){
-            logDiag('검색 결과 없음.');
-            // 결과가 없어도 기준점은 보여주자
+            logDiag('검색 결과 없음');
             map.setCenter(center);
           } else {
             logDiag(`검색 실패 (status=${status})`, true);
           }
         },
-        { location: center, radius: lastRadius } // Kakao Places 옵션
+        { location: center, radius: lastRadius }
       );
     }
 
-    // ---------- 준비 로직 ----------
+    // ===== 초기화 공통 =====
     function readyAt(lat, lng, accuracy=null){
       const center = new kakao.maps.LatLng(lat, lng);
       map.setCenter(center);
       setCurrentOverlay(lat, lng);
       const kw = (qs.get('keyword') || '').trim();
       const radius = parseInt(qs.get('radius') || '2000', 10);
-      runNearbySearch(kw, lat, lng, radius);
+      lastKeyword = kw; lastRadius = Number(radius) || 2000;
       if (accuracy != null) logDiag(`현재 위치 정확도: ±${Math.round(accuracy)}m`);
+      if (kw) runNearbySearch(kw, lat, lng, radius);
     }
 
+    // ===== SDK 로드 후 실행 =====
     function initAfterSdk(){
-      logDiag('Kakao Map 초기화 시작');
-      map = new kakao.maps.Map(document.getElementById('map'), {
-        center: new kakao.maps.LatLng(fallbackCenter.lat, fallbackCenter.lng), // 흰 화면 방지용 초기값
-        level: 5
-      });
+      // 1) 먼저 지도를 "임시 중심"으로만 생성 (흰 화면 방지)
+      map = new kakao.maps.Map(
+        document.getElementById('map'),
+        { center: new kakao.maps.LatLng(FALLBACK.lat, FALLBACK.lng), level:5 }
+      );
       logDiag('지도 객체 생성 완료');
 
-      // URL 파라미터 우선
-      const latP = parseFloatOrNaN(qs.get('lat'));
-      const lngP = parseFloatOrNaN(qs.get('lng'));
+      // 2) URL 파라미터 읽기
+      const latP = fnum(qs.get('lat'));
+      const lngP = fnum(qs.get('lng'));
       const kw = (qs.get('keyword') || '').trim();
       const radius = parseInt(qs.get('radius') || '2000', 10);
+      logDiag(`URL 파라미터: lat="${qs.get('lat')}", lng="${qs.get('lng')}", keyword="${kw}", radius="${radius}"`);
 
+      // 3) 우선순위: URL → Geolocation → Fallback
       if (Number.isFinite(latP) && Number.isFinite(lngP)){
+        setBadge('url-params');
         logDiag(`URL 좌표 사용: (${latP}, ${lngP})`);
         readyAt(latP, lngP, null);
-        return;
+        return; // ★ geolocation 시도 없이 바로 종료
       }
 
-      // 브라우저 GPS 시도
       if ('geolocation' in navigator){
+        setBadge('geolocation');
         logDiag('브라우저 위치 요청...');
         navigator.geolocation.getCurrentPosition(
-          (pos) => {
+          pos => {
             logDiag('브라우저 위치 획득 성공');
             readyAt(pos.coords.latitude, pos.coords.longitude, pos.coords.accuracy);
           },
-          (err) => {
+          err => {
+            setBadge('fallback');
             logDiag(`브라우저 위치 실패: ${err.message} → fallback 사용`, true);
-            // fallback에서도 키워드가 있으면 검색은 수행
-            readyAt(fallbackCenter.lat, fallbackCenter.lng, null);
+            readyAt(FALLBACK.lat, FALLBACK.lng, null);
           },
           { enableHighAccuracy:true, timeout:6000, maximumAge:0 }
         );
       } else {
+        setBadge('fallback');
         logDiag('Geolocation 미지원 → fallback 사용', true);
-        readyAt(fallbackCenter.lat, fallbackCenter.lng, null);
+        readyAt(FALLBACK.lat, FALLBACK.lng, null);
       }
-
-      // 초기 파라미터 기록
-      lastKeyword = kw; lastRadius = Number(radius) || 2000;
     }
 
-    // ---------- 부트스트랩 ----------
+    // ===== 부트스트랩 =====
     window.addEventListener('load', () => {
+      logDiag('페이지 로드 완료');
       if (!window.kakao || !window.kakao.maps){
-        logDiag('kakao.maps 객체 없음! SDK 로드 상태를 확인하세요.', true);
+        logDiag('kakao.maps 객체 없음! SDK 로드 상태 확인', true);
         return;
       }
       kakao.maps.load(initAfterSdk);
