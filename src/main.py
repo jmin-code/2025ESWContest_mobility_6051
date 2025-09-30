@@ -101,7 +101,8 @@ class App(QWidget):
 
         # --- 1. Core Engine / Reader 설정 ---
         # SignEngine 설정
-        self.sign_engine = SignEngine()
+        self.sign_engine = SignEngine(camera_type='picam')
+        #self.sign_engine = SignEngine(camera_type='webcam')
         self.engine_thread = QThread()
         self.sign_engine.moveToThread(self.engine_thread)
         self.engine_thread.started.connect(self.sign_engine.initialize_and_run)

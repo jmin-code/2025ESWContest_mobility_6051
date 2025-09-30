@@ -8,12 +8,19 @@ import sys
 import traceback
 import json
 from tensorflow.keras.models import load_model
-from PySide6.QtCore import QObject, Signal,QTimer
+from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtGui import QImage
 from pathlib import Path
-from picamera2 import Picamera2
 
-# --- Path and Module Setup ---
+# Picamera2 라이브러리가 없는 환경에서도 코드가 실행될 수 있도록 수정
+try:
+    from picamera2 import Piccamera2
+    PICAMERA_AVAILABLE = True
+except ImportError:
+    PICAMERA_AVAILABLE = False
+
+# --- 경로 및 모듈 설정 ---
+# 이 부분은 사용자의 원래 코드를 그대로 유지하면 됩니다.
 try:
     SRC_DIR = Path(__file__).resolve().parent.parent
     BASE_DIR = SRC_DIR.parent
@@ -26,12 +33,13 @@ try:
     GESTURE_LSTM_META = MODEL_DIR / 'gesture_lstm_cls.json'
     HANGUL_MODEL_PATH = MODEL_DIR / 'hangul_chosung_model3.h5'
     SCALER_PATH = MODEL_DIR / 'scaler.joblib'
-    # *** 라벨 맵 경로 추가 ***
     HANGUL_LABEL_MAP_PATH = MODEL_DIR / 'hangul_label_map.json'
 
 except Exception as e:
     print(f"FATAL: Engine setup failed: {e}")
     traceback.print_exc()
+    # 예외 발생 시 필요한 기본값 설정 (예: HANGUL_LABELS)
+    HANGUL_LABELS = {} # 혹은 다른 적절한 기본값
 
 DEVICE = torch.device("cpu")
 ACTIONS_REQUIRING_HANGUL = {'arrival', 'description', 'traffic', 'voice'}
@@ -46,18 +54,29 @@ class SignEngine(QObject):
     finished = Signal()
     mode_changed = Signal(str)
 
-    def __init__(self, parent=None):
-        self.last_inference_time = 0
-        self.INFERENCE_INTERVAL = 0.05   #100ms
+    # 'camera_type' 파라미터 추가 ('picam' 또는 'webcam')
+    def __init__(self, camera_type='picam', parent=None):
         super().__init__(parent)
+        
+        # camera_type 파라미터 유효성 검사
+        if camera_type == 'picam' and not PICAMERA_AVAILABLE:
+            print("WARNING: Picamera2 library not found. Falling back to webcam.")
+            self.camera_type = 'webcam'
+        else:
+            self.camera_type = camera_type
+
+        self.last_inference_time = 0
+        self.INFERENCE_INTERVAL = 0.05   # 100ms
         self.last_mediapipe_results = None
         self.running = False
         self.mode = 'GESTURE'
         self.composer = HangulComposer()
+        
+        # 카메라 객체를 None으로 초기화
+        self.picam2 = None
         self.cap = None
-        # *** 라벨 맵 변수 추가 ***
-        self.idx2id = None
 
+        self.idx2id = None
         self.pause_end_time = 0
         self.post_pause_mode = 'GESTURE'
         self.hand_was_present = False
@@ -88,16 +107,15 @@ class SignEngine(QObject):
             self.finished.emit()
             return
         
-        # QTimer를 사용하여 _main_loop를 주기적으로 호출
         self.running = True
         self.timer = QTimer()
-        self.timer.timeout.connect(self._process_single_frame) # 이름을 _process_single_frame으로 변경
-        self.timer.start(33) # 약 30 FPS로 프레임 처리 시도
+        self.timer.timeout.connect(self._process_single_frame)
+        self.timer.start(33) # 약 30 FPS
 
     def _load_resources(self):
         try:
             self.status_updated.emit("Checking model files...")
-
+            
             # --- 모델 파일 체크 ---
             for p in [HANGUL_MODEL_PATH, SCALER_PATH, GESTURE_LSTM_CKPT,
                     GESTURE_LSTM_META, HANGUL_LABEL_MAP_PATH]:
@@ -117,7 +135,6 @@ class SignEngine(QObject):
             self.hangul_model = load_model(str(HANGUL_MODEL_PATH))
             self.scaler = joblib.load(SCALER_PATH)
 
-            # *** 라벨 맵 로드 ***
             with open(HANGUL_LABEL_MAP_PATH, 'r', encoding='utf-8') as f:
                 label_map = json.load(f)
                 self.idx2id = {int(k): int(v) for k, v in label_map['idx2id'].items()}
@@ -141,11 +158,23 @@ class SignEngine(QObject):
             self.gesture_model.to(DEVICE)
             self.gesture_model.eval()
              
-            # --- 카메라 초기화 (Picamera2 사용) ---
-            self.picam2 = Picamera2()
-            self.picam2.configure(self.picam2.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)}))
-            self.picam2.start()
-             
+            # --- 조건부 카메라 초기화 ---
+            self.status_updated.emit(f"Initializing camera ({self.camera_type})...")
+            if self.camera_type == 'picam':
+                if not PICAMERA_AVAILABLE:
+                    raise ImportError("Picamera2 library is not installed.")
+                self.picam2 = Picamera2()
+                self.picam2.configure(self.picam2.create_preview_configuration(main={"format": "RGB888", "size": (640, 480)}))
+                self.picam2.start()
+                print("[INFO] Picamera2 initialized.")
+            elif self.camera_type == 'webcam':
+                self.cap = cv2.VideoCapture(0)
+                if not self.cap.isOpened():
+                    raise IOError("Cannot open webcam.")
+                print("[INFO] OpenCV VideoCapture initialized.")
+            else:
+                raise ValueError(f"Invalid camera_type: {self.camera_type}")
+
             self.status_updated.emit("Ready.")
             return True
 
@@ -154,39 +183,47 @@ class SignEngine(QObject):
             traceback.print_exc()
             return False
 
+    def _get_frame(self):
+        """초기화된 카메라 소스에서 프레임을 가져와 RGB 형식으로 반환합니다."""
+        if self.camera_type == 'picam':
+            # Picamera2는 이미 RGB numpy 배열을 제공합니다.
+            frame = self.picam2.capture_array("main")
+            return frame is not None, frame
+        elif self.camera_type == 'webcam':
+            ret, frame = self.cap.read()
+            if ret:
+                # OpenCV는 BGR 프레임을 제공하므로 RGB로 변환합니다.
+                return True, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            else:
+                return False, None
+        return False, None
+
     def _process_single_frame(self):
-        if not self.running or not hasattr(self, "picam2"):
+        if not self.running:
             return
 
-        # 모드 전환 처리 (이전과 동일)
         if self.mode == 'PAUSED':
             if time.time() >= self.pause_end_time:
-                if self.post_pause_mode == 'HANGUL':
-                    self.switch_to_hangul_mode()
-                else:
-                    self.switch_to_gesture_mode()
+                if self.post_pause_mode == 'HANGUL': self.switch_to_hangul_mode()
+                else: self.switch_to_gesture_mode()
 
-        # --- 프레임 캡처 ---
-        rgb_frame = self.picam2.capture_array("main")
-        if rgb_frame is None:
+        # 추상화된 _get_frame() 메서드 사용
+        ret, rgb_frame = self._get_frame()
+        if not ret:
             return
+            
         rgb_frame = cv2.flip(rgb_frame, 1)
 
-        # --- Mediapipe 추론 (주기적으로 실행) ---
         now = time.time()
         if self.mode != 'PAUSED':
             if (now - self.last_inference_time) >= self.INFERENCE_INTERVAL:
-                # 추론을 실행하고, 그 결과를 self.last_mediapipe_results에 저장
-                results = self.hands.process(rgb_frame)
-                self.last_mediapipe_results = results # <<-- 중요! 결과를 클래스 변수에 저장
+                results = self.hands.process(rgb_frame) # Mediapipe는 RGB 프레임 필요
+                self.last_mediapipe_results = results 
                 self.process_frame(results)
                 self.last_inference_time = now
 
-        # --- 손 랜드마크 그리기 ---
-        # 그리기용 BGR 복사본 생성
         bgr_display_frame = cv2.cvtColor(rgb_frame, cv2.COLOR_RGB2BGR)
         
-        # 매번 로컬 results가 아닌, 저장된 self.last_mediapipe_results를 확인
         if self.last_mediapipe_results and self.last_mediapipe_results.multi_hand_landmarks:
             self.mp_drawing.draw_landmarks(
                 bgr_display_frame,
@@ -194,21 +231,26 @@ class SignEngine(QObject):
                 self.mp_hands.HAND_CONNECTIONS
             )
 
-        # --- Qt GUI에 프레임 전달 ---
         rgb_display_frame = cv2.cvtColor(bgr_display_frame, cv2.COLOR_BGR2RGB)
         h, w, ch = rgb_display_frame.shape
         bytes_per_line = ch * w
         qt_image = QImage(rgb_display_frame.data, w, h, bytes_per_line, QImage.Format_RGB888)
         self.frame_updated.emit(qt_image)
 
-
     def stop(self):
         if self.running:
             self.running = False
-            self.timer.stop()
-            if hasattr(self, "picam2"):
+            if hasattr(self, 'timer'):
+                self.timer.stop()
+
+            # 조건부 카메라 정리
+            if self.camera_type == 'picam' and self.picam2:
                 self.picam2.stop()
-                print("==================Camera stopped======================")
+                print("================== Picamera2 stopped ======================")
+            elif self.camera_type == 'webcam' and self.cap:
+                self.cap.release()
+                print("================== Webcam released ======================")
+            
             self.finished.emit()
 
     def process_frame(self, results):
@@ -231,14 +273,9 @@ class SignEngine(QObject):
         lm_raw = np.array([lm.x for lm in results.multi_hand_landmarks[0].landmark] + [lm.y for lm in results.multi_hand_landmarks[0].landmark] + [lm.z for lm in results.multi_hand_landmarks[0].landmark])
         pred = self.hangul_model.predict(self.scaler.transform(np.expand_dims(lm_raw, axis=0)), verbose=0)[0]
          
-        # 1. 모델이 예측한 '내부 인덱스' (새로운 번호표)를 찾음
         predicted_idx = np.argmax(pred)
         conf = pred[predicted_idx]
-         
-        # 2. '내부 인덱스'를 '원래 ID' (원래 번호)로 변환
         original_id = self.idx2id.get(predicted_idx)
-         
-        # 3. '원래 ID'를 사용해 실제 라벨 문자를 찾음
         pred_label = HANGUL_LABELS.get(original_id)
 
         if pred_label == 'end' and conf > 0.95:
@@ -257,7 +294,6 @@ class SignEngine(QObject):
          
         elif self.mode == 'HANGUL':
             if conf > 0.85 and pred_label != 'end':
-                # 연속성 체크는 '원래 ID'로 해야 함
                 if original_id == self.last_predicted_id:
                     self.consecutive_count += 1
                 else:
@@ -313,7 +349,7 @@ class SignEngine(QObject):
         try:
             if sequence.shape[0] < 8: return "Unknown"
             def _norm(s):
-                s = s.reshape(-1, 21, 3); s -= s[:, 0:1, :]; n = np.linalg.norm(s[:, :, :2].max(1, keepdims=True) - s[:, :, :2].min(1, keepdims=True), axis=2, keepdims=True); n[n<1e-6]=1; s/=n; return s.reshape(-1, 63)
+                s = s.reshape(--1, 21, 3); s -= s[:, 0:1, :]; n = np.linalg.norm(s[:, :, :2].max(1, keepdims=True) - s[:, :, :2].min(1, keepdims=True), axis=2, keepdims=True); n[n<1e-6]=1; s/=n; return s.reshape(-1, 63)
             def _resample(s, l): T,C=s.shape; src=np.linspace(0,T-1,T); dst=np.linspace(0,T-1,l); o=np.empty((l,C),np.float32); [o.__setitem__((slice(None),i),np.interp(dst,src,s[:,i])) for i in range(C)]; return o
             seq = _norm(sequence.astype(np.float32)); seq = _resample(seq, self.fixed_len)
             with torch.no_grad():
@@ -321,5 +357,3 @@ class SignEngine(QObject):
                 return self.id_to_word.get(int(torch.argmax(logits, dim=-1).item()), "Unknown")
         except Exception as e:
             print(f"[predict] error: {e}"); return "Unknown"
-        
-        
