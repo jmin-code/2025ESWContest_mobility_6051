@@ -155,7 +155,6 @@ class SearchPage(QWidget):
         try:
             self.chat.append(keyword, role="user")
             # "주변을 탐색합니다." 대신 더 명확한 로딩 메시지로 변경합니다.
-            self.chat.append(f"'{keyword}' 검색 중... 잠시만 기다려주세요.", role="bot")
         except Exception as e:
             # 디버깅을 위해 에러를 출력하는 코드를 추가하는 것이 좋습니다.
             print(f"Error appending to chat: {e}")

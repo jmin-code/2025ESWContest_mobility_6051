@@ -251,6 +251,7 @@ class VoicePage(QWidget):
             elif not self._th or not self._th.isRunning():  # 혹시 실행 중이 아니면 강제 실행
                 self.play(self._final_text)
         else:
+            print(self._final_text)
             print("[VoicePage] no final text yet; waiting for hangul_input_finished")
 
     def _set_voice_ui_visible(self, on: bool):
