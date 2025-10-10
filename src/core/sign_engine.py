@@ -12,7 +12,6 @@ from PySide6.QtCore import QObject, Signal, QTimer
 from PySide6.QtGui import QImage
 from pathlib import Path
 
-# NEW: Safely import Picamera2 to avoid errors on non-Raspberry Pi systems
 try:
     from picamera2 import Picamera2
     PICAM_AVAILABLE = True
@@ -56,7 +55,7 @@ class SignEngine(QObject):
     def __init__(self, camera_type: str = 'picam', parent=None):
         super().__init__(parent)
         self.camera_type = camera_type.lower()
-        self.camera = None # This will hold either VideoCapture or Picamera2 instance
+        self.camera = None
 
         self.last_inference_time = 0
         self.INFERENCE_INTERVAL = 0.1
@@ -148,21 +147,19 @@ class SignEngine(QObject):
             self.status_updated.emit(f"Initialization failed: {e}"); traceback.print_exc()
             return False
 
-    # NEW: Helper method to get a frame from the correct source
     def _get_frame(self):
         """Fetches a frame from the configured camera and returns it in RGB format."""
         if self.camera_type == 'webcam':
             ret, frame = self.camera.read()
             if not ret:
                 return False, None
-            # OpenCV reads in BGR, convert to RGB for consistency
+
             return True, cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        
         elif self.camera_type == 'picam':
-            # Picamera2 captures directly in the configured format (RGB888)
             return True, self.camera.capture_array("main")
         return False, None
 
-    # MODIFIED: Unified main processing loop
     def _process_single_frame(self):
         if not self.running or not self.camera:
             return
@@ -214,7 +211,6 @@ class SignEngine(QObject):
                     print("================== Picamera stopped ======================")
             self.finished.emit()
 
-    # --- The rest of the methods are unchanged ---
 
     def process_frame(self, results):
         current_time = time.time()
@@ -269,7 +265,6 @@ class SignEngine(QObject):
                 self.last_predicted_id = None
                 self.consecutive_count = 0
     
-    # <... Other methods like start_hangul_with_delay, switch_to_gesture_mode, predict_gesture_ctc, etc., remain exactly the same ...>
     def start_hangul_with_delay(self):
         print("[Engine] Pausing for 1s, then will switch to HANGUL mode.")
         self.mode = 'PAUSED'
