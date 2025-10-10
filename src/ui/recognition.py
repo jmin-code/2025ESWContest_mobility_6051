@@ -8,11 +8,11 @@ from pathlib import Path
 class RecognitionPage(QWidget):
     BASE_W, BASE_H = 800, 480
     
-    def __init__(self, assets_dir, on_home=None, on_nav=None, on_sos=None, sign_engine=None):
+    def __init__(self, assets_dir, on_home=None, on_voice=None, on_nav=None, on_sos=None, sign_engine=None):
         super().__init__()
         self.assets = assets_dir
         self.on_home_cb = on_home or (lambda: None)
-        self.on_nav, self.on_sos = on_nav or (lambda: None), on_sos or (lambda: None)
+        self.on_voice, self.on_nav, self.on_sos = on_voice or (lambda: None), on_nav or (lambda: None), on_sos or (lambda: None)
         self.sign_engine = sign_engine
 
         # --- UI 요소 생성 ---
@@ -66,6 +66,7 @@ class RecognitionPage(QWidget):
             return b
             
         self.btn_home = mk_icon("home_b.png", self._on_home_clicked)
+        self.btn_voice = mk_icon("voice_over.png", self.on_voice)
         self.btn_nav  = mk_icon("nav.png", self.on_nav)
         self.btn_sos  = mk_icon("sos.png", self.on_sos)
         
@@ -88,6 +89,7 @@ class RecognitionPage(QWidget):
         self.lbl_gesture.raise_()
         self.lbl_hangul.raise_()
         self.btn_home.raise_()
+        self.btn_voice.raise_()
         self.btn_nav.raise_()
         self.btn_sos.raise_()
 
@@ -267,7 +269,8 @@ class RecognitionPage(QWidget):
         self.lbl_hangul.setVisible(False)
 
         for btn, x, y, w, h in (
-            (self.btn_home, 653, 20, 24, 24),
+            (self.btn_home, 603, 20, 24, 24),
+            (self.btn_voice, 653, 20, 24, 24),
             (self.btn_nav,  703, 20, 22, 22),
             (self.btn_sos,  753, 20, 22, 22),
         ):
@@ -340,6 +343,6 @@ class RecognitionPage(QWidget):
         self._status_current = state
         self._apply_status_pixmap()
 
-    def _blink_recognized(self, ms: int = 2300): 
+    def _blink_recognized(self, ms: int = 2300):  # 2s 전환 + 여유
         self._set_status("recognized")
         self._status_timer.start(ms)

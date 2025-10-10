@@ -1,19 +1,18 @@
-
-# Python Virtual Environment
-mediapipe-env/
+new_ver/
+new_ver2/
 venv/
 .venv/
+mediapipe-env/
+src/.rasp/
+.rasp/
+rasp/
 
-# AI/ML Models & Data
+
 *.joblib
 scaler.joblib
 
-# Python Cache
 __pycache__/
 *.pyc
-
-# IDE & OS
 .vscode/
 .idea/
 .DS_Store
-

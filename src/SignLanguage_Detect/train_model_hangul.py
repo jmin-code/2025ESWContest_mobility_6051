@@ -17,7 +17,7 @@ from sklearn.utils.class_weight import compute_class_weight
 import joblib
 
 # --- 1. 설정 (Configuration) ---
-DATA_DIR = "../../hangul"
+DATA_DIR = "hangul"
 
 # HANGUL 사전을 sign_engine.py와 일치하도록 쌍자음 추가
 HANGUL = {

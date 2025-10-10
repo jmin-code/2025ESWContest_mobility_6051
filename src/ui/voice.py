@@ -32,6 +32,7 @@ class SpeakerThread(QThread):
 
     def run(self):
         try:
+            print("[voice] speak_stream start")
             speak_stream(self.text, self.lang)
         except Exception as e:
             print(f"[voice] audio error: {e}")
@@ -42,6 +43,7 @@ class SpeakerThread(QThread):
 class VoicePage(QWidget):
     """QStackedWidget 안에서 쓰는 Voice 전용 페이지."""
     BASE_W, BASE_H = 800, 480
+    playback_finished = Signal()
 
     def __init__(
         self,
@@ -64,8 +66,13 @@ class VoicePage(QWidget):
         self.on_sos_cb   = on_sos   or (lambda: None)
         self.LOAD_Y_PCT = 0.70   # 화면 높이의 78% 지점에 로딩 점 배치 (원하면 0.70~0.85로 조절)
         self.LOAD_SIZE  = 62     # 로딩 점 아이콘 크기(px)
-        self.CAMERA_HINT_PT = 26   # 카메라 화면에서 크게
-        self.VOICE_HINT_PT  = 18   # 애니메이션 후(음성 UI)엔 조금 작게
+        self.CAMERA_HINT_PT = 32   # 카메라 화면에서 크게
+        self.VOICE_HINT_PT  = 32   # 애니메이션 후(음성 UI)엔 조금 작게
+        self.BOTTOM_HINT_Y_PCT = 0.88   # 화면 높이의 86% 지점(숫자 줄일수록 더 위)
+        self.BOTTOM_HINT_H     = 85     # 바 높이
+        self.BOTTOM_HINT_MARGIN_X = 18  # 좌우 마진
+        self._freeze_frames = False      # 전환 중 카메라 프레임 무시
+        self._last_frame_pm = None       # 마지막 프레임 캐시
         
         self._played_this_show = False
         self._th: SpeakerThread | None = None
@@ -103,7 +110,12 @@ class VoicePage(QWidget):
         lay.removeWidget(self.load_label)   # 레이아웃에서 분리
         self.load_label.setParent(self)     # 페이지에 직접 부착(오버레이)
         self.load_label.show()
+        
+        lay.removeWidget(self.mic_label)
+        self.mic_label.setParent(self)
+        self.mic_label.show()
 
+        self.MIC_Y_PCT = 0.42
 
         # Assets
         self._bg  = _pm(self.assets / "bg"    / "voice_bg.png") if (self.assets / "bg" / "voice_bg.png").exists() else _pm(BG_PATH)
@@ -146,22 +158,23 @@ class VoicePage(QWidget):
             QLabel {
                 color: #FFFFFF;
                 font-weight: 600;
-                background: rgba(255,255,255,0.10);
+                background: rgba(0,0,0,0.80);
                 border-radius: 28px;
                 padding: 10px 18px;
             }
         """)
         # 기본 폰트 크기 살짝 키우고, 처음엔 표시
-        f = self.bottom_hint.font(); f.setPointSize(18); self.bottom_hint.setFont(f)
+        f = self.bottom_hint.font(); f.setPointSize(28); self.bottom_hint.setFont(f)
         self.bottom_hint.show()
 
         self._hint_opacity = QGraphicsOpacityEffect(self.bottom_hint)
         self.bottom_hint.setGraphicsEffect(self._hint_opacity)
-        self._hint_fade = QPropertyAnimation(self._hint_opacity, b"opacity", self)
-        self._hint_fade.setDuration(300)
-        self._hint_fade.setStartValue(1.0)
-        self._hint_fade.setEndValue(0.0)
-        self._hint_fade.finished.connect(self.bottom_hint.hide)
+        # self._hint_fade = QPropertyAnimation(self._hint_opacity, b"opacity", self)
+        # self._hint_fade.setDuration(300)
+        # self._hint_fade.setStartValue(1.0)
+        # self._hint_fade.setEndValue(0.0)
+        # self._hint_fade.finished.connect(self.bottom_hint.hide)
+        self._hint_fade = None
 
         # 엔진 시그널 연결(프레임 갱신)
         if self.sign_engine:
@@ -176,15 +189,18 @@ class VoicePage(QWidget):
         """end 제스처 확인 → 카메라 축소/페이드 후 음성 UI로 전환"""
         if self._mode != "camera":
             return
-        # ★ 레이스 방지: 최종 텍스트 즉시 확보 시도
-        if (not self._final_text) and self.sign_engine and hasattr(self.sign_engine, "get_hangul_result"):
-            try:
-                val = self.sign_engine.get_hangul_result() or ""
-                self._final_text = val.strip()
-                print("[VoicePage] pulled final text from engine:", self._final_text)
-            except Exception as e:
-                print("[VoicePage] get_hangul_result failed:", e)
 
+        # ★ 전환 시작: 프레임 처리 중단 + 마지막 프레임으로 고정
+        self._freeze_frames = True
+        try:
+            if self._last_frame_pm:
+                fast = Qt.FastTransformation
+                scaled = self._last_frame_pm.scaled(self.camera_label.size(),
+                                                    Qt.KeepAspectRatioByExpanding, fast)
+                self.camera_label.setPixmap(scaled)
+        except Exception:
+            pass
+        
         self._mode = "transition"
         full = self.rect()
 
@@ -206,12 +222,22 @@ class VoicePage(QWidget):
         self._set_voice_ui_visible(True)
         self._mode = "voice"
         
-        try:
-            self._hint_fade.stop()
-            self._hint_opacity.setOpacity(1.0)
-            self._hint_fade.start()
-        except Exception:
-            self.bottom_hint.hide()
+        # try:
+        #     self._hint_fade.stop()
+        #     self._hint_opacity.setOpacity(1.0)
+        #     self._hint_fade.start()
+        # except Exception:
+        #     self.bottom_hint.hide()
+        
+        # 하단 텍스트를 보이스 화면에서도 계속 표시
+        self._hint_opacity.setOpacity(1.0)
+        f = self.bottom_hint.font()
+        f.setPointSize(self.VOICE_HINT_PT)
+        f.setBold(False)
+        self.bottom_hint.setFont(f)
+        # 전환 직후에도 마지막 텍스트 유지
+        self.set_bottom_text(self._final_text or "인식된 문장을 음성으로 안내합니다")
+
 
         # 기본 자막 업데이트
         # if hasattr(self, "set_bottom_text"):
@@ -219,8 +245,11 @@ class VoicePage(QWidget):
 
         # ★ 최종 문자열이 이미 도착했다면 그걸 재생, 아니면 대기
         if self._final_text:
-            self.play(self._final_text)  # caption 없이
-            self._pending_tts = False
+            if self._pending_tts:  # 예약된 경우
+                self.play(self._final_text)
+                self._pending_tts = False
+            elif not self._th or not self._th.isRunning():  # 혹시 실행 중이 아니면 강제 실행
+                self.play(self._final_text)
         else:
             print("[VoicePage] no final text yet; waiting for hangul_input_finished")
 
@@ -249,23 +278,30 @@ class VoicePage(QWidget):
 
         # 이미 아이콘 UI 상태면 바로 재생
         if self._final_text:
-            self.play(self._final_text, caption="음성으로 읽어드릴게요.")
+            self.play(self._final_text)
 
 
     # ---------- 엔진 프레임 ----------
     @Slot(object)
     def set_camera_image(self, frame_qimage):
-        # 카메라 모드에서만 갱신
-        if self._mode not in ("camera", "transition"):
+        # 카메라/전환 상태에서만, 그리고 freeze 아니어야 갱신
+        if self._mode not in ("camera", "transition") or self._freeze_frames:
             return
         try:
             if frame_qimage is None or frame_qimage.isNull():
                 return
-            # 카메라 라벨은 항상 전체 창 채우기
-            self.camera_label.setGeometry(self.rect())
+            # 캐시: 마지막 프레임 보관
             pm = QPixmap.fromImage(frame_qimage)
-            scaled = pm.scaled(self.camera_label.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            self._last_frame_pm = pm
+
+            # 전환 중이면 Fast, 평상시 Smooth
+            app = QApplication.instance().activeWindow()
+            fast = Qt.FastTransformation if getattr(app, "_transitioning", False) else Qt.SmoothTransformation
+
+            self.camera_label.setGeometry(self.rect())
+            scaled = pm.scaled(self.camera_label.size(), Qt.KeepAspectRatioByExpanding, fast)
             self.camera_label.setPixmap(scaled)
+
             if not self.camera_label.isVisible():
                 self.camera_label.show()
             self.camera_label.raise_()
@@ -273,11 +309,16 @@ class VoicePage(QWidget):
         except Exception as e:
             print(f"[VoicePage] set_camera_image error: {e}")
 
+
     # ---------- 라이프사이클 ----------
     def showEvent(self, e):
         super().showEvent(e)
+        
         # 카메라 모드로 리셋
         self._mode = "camera"
+        self._freeze_frames = False
+        self._last_frame_pm = None
+        
         self._played_this_show = False
         self.bg_label.setGeometry(self.rect())
         self.camera_label.setGeometry(self.rect())
@@ -303,21 +344,37 @@ class VoicePage(QWidget):
         super().resizeEvent(e)
         self.bg_label.setGeometry(self.rect())
         self._apply_pixmaps()
+        
+        s = max(160, int(min(self.width(), self.height()) * 0.36))
+        x = (self.width() - s) // 2
+        y = int(self.height() * getattr(self, "MIC_Y_PCT", 0.38)) - (s // 2)
+        self.mic_label.setGeometry(x, y, s, s)
+        # ★ 크기 s로 직접 스케일 (라벨 size 의존 X)
+        if not self._mic.isNull():
+            self.mic_label.setPixmap(
+                self._mic.scaled(s, s, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+        self.mic_label.raise_()
+        
         if self._mode in ("camera", "transition"):
             self.camera_label.setGeometry(self.rect())
 
         # ── 하단 배너 위치 (좌우 18px 마진, 높이 68px) ──
-        m = 18
-        h = 68
         r = self.rect()
-        self.bottom_hint.setGeometry(m, r.bottom() - h - m, r.width() - m*2, h)
-        # 항상 맨 위로
+        h = getattr(self, "BOTTOM_HINT_H", 68)
+        mx = getattr(self, "BOTTOM_HINT_MARGIN_X", 18)
+        y_pct = getattr(self, "BOTTOM_HINT_Y_PCT", 0.86)
+
+        bar_w = r.width() - mx*2
+        bar_x = mx
+        bar_y = int(r.height() * y_pct) - (h // 2)   # ← 살짝 위로 올릴 때 y_pct를 0.84~0.88로 조정
+        self.bottom_hint.setGeometry(bar_x, bar_y, bar_w, h)
         self.bottom_hint.raise_()
         
         # ── 로딩 점 위치/크기 동적 배치 ──
         w = h = getattr(self, "LOAD_SIZE", 64)
         x = (self.width() - w) // 2
-        y = int(self.height() * getattr(self, "LOAD_Y_PCT", 0.78)) - (h // 2)
+        y = int(self.height() * getattr(self, "LOAD_Y_PCT", 0.72)) - (h // 2)
         self.load_label.setGeometry(x, y, w, h)
         self.load_label.raise_()
 
@@ -333,11 +390,24 @@ class VoicePage(QWidget):
 
     # ---------- 음성 아이콘/로더/TTS ----------
     def _apply_pixmaps(self):
+        # if not self._bg.isNull():
+        #     self.bg_label.setPixmap(self._bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+        #     self.bg_label.lower()
+        # if not self._mic.isNull():
+        #     self.mic_label.setPixmap(self._mic.scaled(144, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation))
         if not self._bg.isNull():
-            self.bg_label.setPixmap(self._bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
+            self.bg_label.setPixmap(
+                self._bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
+            )
             self.bg_label.lower()
+        # 창 크기에 따라 아이콘 크게 스케일링 (짧은 변의 36%)
         if not self._mic.isNull():
-            self.mic_label.setPixmap(self._mic.scaled(144, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+            sz = self.mic_label.size()
+            self.mic_label.setPixmap(
+                self._mic.scaled(sz, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
+
+
 
     def _tick(self):
         if not self._cycle or not self.load_label.isVisible():
@@ -372,13 +442,14 @@ class VoicePage(QWidget):
     def play(self, text: str, lang: str = "ko"):
         if not text or not text.strip():
             print("[VoicePage] play() skipped: empty text")
+            self.playback_finished.emit()
             return
         if self._th and self._th.isRunning():
             print("[VoicePage] play() skipped: already running")
             return
         print("[VoicePage] play():", text)
         self._th = SpeakerThread(text, lang=lang)
-        self._th.finished.connect(lambda: print("[VoicePage] TTS finished"))
+        self._th.finished.connect(self.playback_finished.emit)
         self._th.start()
 
 # === CLI: run voice window standalone ===

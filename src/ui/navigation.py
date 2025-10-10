@@ -231,9 +231,9 @@ from ui.chat import ChatPanel
 class NavigationPage(QWidget):
     BASE_W, BASE_H = 800, 480
 
-    def __init__(self, assets_dir, on_home=None, on_nav=None, on_sos=None, fonts=None, sign_engine=None):
+    def __init__(self, assets_dir, on_home=None, on_voice=None, on_nav=None, on_sos=None, fonts=None, sign_engine=None):
         super().__init__()
-        self.assets = assets_dir; self.on_home = on_home; self.on_nav = on_nav; self.on_sos = on_sos
+        self.assets = assets_dir; self.on_home = on_home; self.on_voice = on_voice; self.on_nav = on_nav; self.on_sos = on_sos
         self.fonts = fonts or {}; self.sign_engine = sign_engine
         self.seoul_station_coords = (37.554678, 126.970609)
         self.map_initialized = False
@@ -284,6 +284,7 @@ class NavigationPage(QWidget):
         self.btn_recenter.hide()
 
         self.btn_home = mk_icon("home.png", self.on_home)
+        self.btn_voice = mk_icon("voice_over.png", self.on_voice)
         self.btn_nav  = mk_icon("nav_b.png", lambda: None)
         self.btn_sos  = mk_icon("sos.png", self.on_sos)
 
@@ -292,9 +293,9 @@ class NavigationPage(QWidget):
             self.sign_engine.hangul_result_updated.connect(self.lbl_hangul.setText)
 
         self.layout = {
-            "chat":   (520,  79, 260, 140),
-            "input":  (520, 240, 265,  56),
-            "camera": (520, 303, 260, 160),
+            "chat":   (520,  79, 260, 140),  # 우측 상단 채팅
+            "input":  (520, 242, 265,  56),  # ← "목적지를 입력…" 실시간 텍스트 박스 (조절 포인트)
+            "camera": (520, 303, 265, 160),  # ← 카메라 더 작고, 더 아래 (조절 포인트)
         }
         self._relayout()
 
@@ -422,7 +423,7 @@ class NavigationPage(QWidget):
             pm2 = QPixmap.fromImage(img); pm2.setDevicePixelRatio(dpr)
             self.bg.setPixmap(pm2)
 
-        self.map_view.setGeometry(self._map_from_design(fit, 15, 79, w=480, h=385))
+        self.map_view.setGeometry(self._map_from_design(fit, 22, 87, w=468, h=373))
         self.chat.setGeometry(self._rect(fit, "chat"))
         if not self.chat.isVisible(): self.chat.show()
         self.chat.raise_()
@@ -430,8 +431,10 @@ class NavigationPage(QWidget):
         self.lbl_hangul.setGeometry(self._rect(fit, "input"))
         self.camera_view.setGeometry(self._rect(fit, "camera"))
 
+        # 아이콘 버튼
         for btn, x, y, w, h in (
-            (self.btn_home, 653, 20, 24, 24),
+            (self.btn_home, 603, 20, 24, 24),
+            (self.btn_voice, 653, 20, 24, 24),
             (self.btn_nav,  703, 20, 22, 22),
             (self.btn_sos,  753, 20, 22, 22),
         ):
@@ -447,7 +450,7 @@ class NavigationPage(QWidget):
         self.camera_view.raise_()
         self.btn_recenter.move(30, 95)
         self.btn_recenter.raise_()
-        for b in (self.btn_home, self.btn_nav, self.btn_sos):
+        for b in (self.btn_home, self.btn_voice, self.btn_nav, self.btn_sos):
             b.raise_()
 
     def resizeEvent(self, e):

@@ -26,10 +26,11 @@ class _DebugWebPage(QWebEnginePage):
 class SearchPage(QWidget):
     BASE_W, BASE_H = 800, 480
 
-    def __init__(self, assets_dir, on_home=None, on_recog=None, on_sos=None, fonts=None, sign_engine=None):
+    def __init__(self, assets_dir, on_home=None, on_voice=None, on_recog=None, on_sos=None, fonts=None, sign_engine=None):
         super().__init__()
         self.assets = assets_dir
         self.on_home = on_home
+        self.on_voice = on_voice
         self.on_recog = on_recog
         self.on_sos = on_sos
         self.fonts = fonts or {}
@@ -77,6 +78,7 @@ class SearchPage(QWidget):
             if cb: b.clicked.connect(cb)
             return b
         self.btn_home  = mk_icon("home.png", self.on_home)
+        self.btn_voice = mk_icon("voice.png", self.on_voice)
         self.btn_recog = mk_icon("nav_b.png", self.on_recog) # nav_b.png가 맞는 아이콘인지 확인 필요
         self.btn_sos   = mk_icon("sos.png", self.on_sos)
 
@@ -146,9 +148,11 @@ class SearchPage(QWidget):
         self.lbl_hangul.setText(f"검색: {keyword}")
         try:
             self.chat.append(keyword, role="user")
-            self.chat.append("주변을 탐색합니다.", role="bot")
-        except Exception:
-            pass
+            # "주변을 탐색합니다." 대신 더 명확한 로딩 메시지로 변경합니다.
+            self.chat.append(f"'{keyword}' 검색 중... 잠시만 기다려주세요.", role="bot")
+        except Exception as e:
+            # 디버깅을 위해 에러를 출력하는 코드를 추가하는 것이 좋습니다.
+            print(f"Error appending to chat: {e}")
 
     @Slot(QImage)
     def set_camera_image(self, qt_image: QImage):

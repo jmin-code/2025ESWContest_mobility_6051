@@ -1,8 +1,8 @@
 # ui/chat.py
 import os
-from PySide6.QtCore import Qt, QRect, QTimer
-from PySide6.QtGui import QPixmap, QPainter, QPaintEvent
-from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy, QFrame
+from PySide6.QtCore import Qt, QRect, QTimer, QEasingCurve, QPropertyAnimation
+from PySide6.QtGui import QPixmap, QPainter, QPaintEvent, QFont
+from PySide6.QtWidgets import QWidget, QLabel, QVBoxLayout, QHBoxLayout, QScrollArea, QSizePolicy, QFrame, QGraphicsOpacityEffect
 from typing import Tuple
 
 _DEBUG_NINE_SLICE = False
@@ -59,28 +59,134 @@ def _draw_nine_slice(p: QPainter, pm: QPixmap, dst: QRect, t: int, r: int, b: in
 class ChatBubble(QWidget):
     def __init__(self, text: str, bubble_png: str, slices=None, max_width=420, parent=None):
         super().__init__(parent)
-        self._png_path = bubble_png; self._pix = _pm(bubble_png); self._slices = slices or _caps_for(self._pix, bubble_png)
-        is_bot = ("com_bubble" in os.path.basename(bubble_png).lower())
-        self._pad_l=12; self._pad_r=12; self._pad_v_single=1; self._pad_v_multi=2
+        self._png_path = bubble_png
+        self._pix = _pm(bubble_png)
+        self._slices = slices or _caps_for(self._pix, bubble_png)
+        self._pad_l = 12
+        self._pad_r = 12
+        self._pad_v_single = 1
+        self._pad_v_multi  = 2
+        self.is_bot = ("com_bubble" in os.path.basename(bubble_png).lower())
+        
+        self.TEXT_BIAS_USER = 0   # ▶ 유저 버블: 텍스트를 오른쪽으로 밀고 싶을 때 (좌패딩 +10)
+        self.TEXT_BIAS_BOT  = 0    # 봇은 필요 없으면 0
+        self.bg_opacity = 0.45 if self.is_bot else 1.0 
+        self.COM_DELAY_MS = 2000
+
         self.setAttribute(Qt.WA_TranslucentBackground, True)
-        lay=QVBoxLayout(self); lay.setContentsMargins(self._pad_l,self._pad_v_single,self._pad_r,self._pad_v_single)
-        self.lbl=QLabel(text,self); self.lbl.setWordWrap(True); self.lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
-        self.lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum); self.lbl.setStyleSheet("color:#FFFFFF;background:transparent;font-size:16px;")
+
+        # 레이아웃
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(self._pad_l, self._pad_v_single, self._pad_r, self._pad_v_single)
+
+        # ----- 라벨: 반응형 폰트 + 긴단어 소프트랩 -----
+        self.lbl = QLabel(self._soft_wrap_text(text), self)
+        self.lbl.setWordWrap(True)
+        self.lbl.setTextInteractionFlags(Qt.TextSelectableByMouse)
+        self.lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Maximum)
+        self._apply_auto_font()  # px 고정 대신 pt 기반으로 반응형
+        self.lbl.setStyleSheet("color:#FFFFFF;background:transparent;")
         lay.addWidget(self.lbl)
-        t,r,b,l=self._slices; self.setMinimumWidth(l+r+2); self.setMinimumHeight(t+b+2)
-        self.setMaximumWidth(max_width); self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+
+        # 최소 크기(9-slice 캡 + 내부 패딩 고려)
+        t, r, b, l = self._slices
+        min_w_caps = l + r + 2
+        min_h_caps = t + b + 2
+        self.setMinimumWidth(min_w_caps + (self._pad_l + self._pad_r))
+        self.setMinimumHeight(min_h_caps)
+        self.setMaximumWidth(max_width)
+        self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
+        f = QFont(self.lbl.font())
+        f.setPointSize(15)          # 원하는 폰트 크기 
+        self.lbl.setFont(f)
         self._apply_wrap_metrics()
+
+    # -------- helpers --------
+    def _apply_auto_font(self):
+        """DPI 기반 pt 폰트 크기(반응형)."""
+        f = QFont(self.lbl.font())
+        # 대략 14~18pt 범위 안에서 DPI에 비례
+        pt = max(14, min(18, int(self.logicalDpiY() / 6)))
+        f.setPointSize(pt)
+        self.lbl.setFont(f)
+
+    def _soft_wrap_text(self, s: str) -> str:
+        """
+        공백 없는 매우 긴 토큰(예: URL, 해시)이 버블 밖으로 새지 않도록
+        20~24자마다 zero-width space(\\u200b)를 삽입.
+        """
+        import re
+        tokens = s.split(" ")
+        out = []
+        for tok in tokens:
+            if len(tok) <= 24:
+                out.append(tok)
+                continue
+            # 영문/숫자 연속 토큰만 분절(한글은 보통 자동 줄바꿈 처리됨)
+            if re.fullmatch(r"[A-Za-z0-9\-._~:/?#\[\]@!$&'()*+,;=%]+", tok):
+                chunks = [tok[i:i+24] for i in range(0, len(tok), 24)]
+                out.append("\u200b".join(chunks))
+            else:
+                out.append(tok)
+        return " ".join(out)
+
+    # -------- layout metrics --------
     def _apply_wrap_metrics(self):
-        fm=self.lbl.fontMetrics(); avail=max(10,(self.width() or self.maximumWidth() or 240)-(self._pad_l+self._pad_r))
-        br=fm.boundingRect(0,0,avail,10**6,Qt.TextWordWrap,self.lbl.text())
-        lines=max(1,(br.height()+fm.lineSpacing()-1)//fm.lineSpacing())
-        pad_v=self._pad_v_single if lines==1 else self._pad_v_multi
-        self.layout().setContentsMargins(self._pad_l,pad_v,self._pad_r,pad_v)
-    def set_fixed_width(self,w:int): self.setFixedWidth(int(w));self._apply_wrap_metrics();self.adjustSize();self.updateGeometry()
-    def resizeEvent(self,e): super().resizeEvent(e); self._apply_wrap_metrics()
-    def paintEvent(self,e:QPaintEvent):
-        p=QPainter(self); p.setRenderHint(QPainter.SmoothPixmapTransform, True)
-        if not self._pix.isNull(): t,r,b,l=self._slices; _draw_nine_slice(p,self._pix,self.rect(),t,r,b,l)
+        fm = self.lbl.fontMetrics()
+        line_h = fm.lineSpacing()
+
+        # 폰트 기준으로 패딩 스케일 (반응형 내부 여백)
+        self._pad_l = self._pad_r = min(22+3, max(8+3, line_h // 3))
+        self._pad_v_single = min(14, max(4, line_h // 5))
+        self._pad_v_multi  = min(18, max(6, line_h // 4))
+        
+        if not self.is_bot:
+            self._pad_l += getattr(self, "TEXT_BIAS_USER", 0)
+        else:
+            self._pad_r += getattr(self, "TEXT_BIAS_BOT", 0)
+
+        avail = max(10, (self.width() or self.maximumWidth() or 240) - (self._pad_l + self._pad_r))
+        br = fm.boundingRect(0, 0, avail, 10**6, Qt.TextWordWrap, self.lbl.text())
+        lines = max(1, (br.height() + line_h - 1) // line_h)
+        pad_v = self._pad_v_single if lines == 1 else self._pad_v_multi
+        self.layout().setContentsMargins(self._pad_l, pad_v, self._pad_r, pad_v)
+
+        # 최소 폭 재보정(패딩 포함) — 레이아웃이 아주 좁아질 때도 안전
+        t, r, b, l = self._slices
+        min_w_caps = l + r + 2
+        self.setMinimumWidth(min_w_caps + (self._pad_l + self._pad_r))
+
+    # -------- public API --------
+    def set_fixed_width(self, w: int):
+        self.setFixedWidth(int(w))
+        self._apply_wrap_metrics()
+        self.adjustSize()
+        self.updateGeometry()
+
+    # (선택) 텍스트 교체 시도용 메서드
+    def set_text(self, text: str):
+        self.lbl.setText(self._soft_wrap_text(text or ""))
+        self._apply_auto_font()
+        self._apply_wrap_metrics()
+        self.update()
+
+    # -------- Qt events --------
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._apply_all()
+        QTimer.singleShot(0, lambda: self.scroll.verticalScrollBar().setValue(
+            self.scroll.verticalScrollBar().maximum()
+        ))
+
+    def paintEvent(self, e: QPaintEvent):
+        p = QPainter(self)
+        p.setRenderHint(QPainter.SmoothPixmapTransform, True)
+        if not self._pix.isNull():
+            if self.bg_opacity < 1.0 and self.is_bot:
+                p.setOpacity(self.bg_opacity)   # ★ com_bubble만 투명도 적용
+            t, r, b, l = self._slices
+            _draw_nine_slice(p, self._pix, self.rect(), t, r, b, l)
+
 
 class ChatPanel(QWidget):
     def __init__(self, user_png: str, bot_png: str, parent=None):
@@ -88,40 +194,177 @@ class ChatPanel(QWidget):
         self.user_png, self.bot_png = user_png, bot_png
         self.user_slices = _caps_for(_pm(user_png), user_png); self.bot_slices  = _caps_for(_pm(bot_png),  bot_png)
         root=QVBoxLayout(self); root.setContentsMargins(0,0,0,0)
-        self.scroll=QScrollArea(self); self.scroll.setWidgetResizable(True); self.scroll.setFrameShape(QFrame.NoFrame)
+        self.scroll=QScrollArea(self); 
+        self.scroll.setWidgetResizable(True); 
+        self.scroll.setFrameShape(QFrame.NoFrame)
+        # 스크롤바 숨김 + 패딩 제거
+        self.scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        self.scroll.setStyleSheet("""
+        QScrollArea { border: none; padding: 0; margin: 0; }
+        QScrollArea > QWidget > QWidget { margin: 0; }   /* viewport 내부 위젯 */
+        QScrollBar:vertical { width: 0px; margin: 0; background: transparent; }
+        QScrollBar::handle:vertical,
+        QScrollBar::add-line:vertical,
+        QScrollBar::sub-line:vertical,
+        QScrollBar::add-page:vertical,
+        QScrollBar::sub-page:vertical { height: 0px; margin: 0; border: none; background: transparent; }
+        """)
         root.addWidget(self.scroll)
-        self.container=QWidget(); self.v=QVBoxLayout(self.container); self.v.setSpacing(8)
-        self.v.setContentsMargins(15,8,10,8); self.v.addStretch(1)
+        self.container=QWidget(); 
+        self.v=QVBoxLayout(self.container); 
+        self.v.setSpacing(8)
+        self.v.setContentsMargins(15,8,4,8); 
+        
+        self.v.insertStretch(0, 1)
+        
         self.scroll.setWidget(self.container)
         self.setStyleSheet("QScrollArea{background:transparent;} QWidget{background:transparent;}")
+    
+    def _smooth_scroll_to_bottom(self, dur=240):
+        sb = self.scroll.verticalScrollBar()
+        if not sb: return
+        start = sb.value()
+        end = sb.maximum()
+        if end <= start:
+            return
+        # 애니메이션이 GC로 사라지지 않도록 참조 유지
+        if not hasattr(self, "_scroll_anim"):
+            self._scroll_anim = None
+        anim = QPropertyAnimation(sb, b"value", self)
+        anim.setStartValue(start)
+        anim.setEndValue(end)
+        anim.setDuration(dur)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        # 이전 애니메이션 중지
+        if self._scroll_anim and self._scroll_anim.state() == QPropertyAnimation.Running:
+            self._scroll_anim.stop()
+        self._scroll_anim = anim
+        anim.start()
+    
+    def _single_line_pixels(self, bubble: QWidget, text: str) -> int:
+        fm = bubble.lbl.fontMetrics()
+        # 이모지/한글 오차 보정: boundingRect와 horizontalAdvance 둘 중 큰 값 사용
+        w1 = fm.horizontalAdvance(text)
+        w2 = fm.boundingRect(text).width()
+        text_px = max(w1, w2)
+        return text_px + bubble._pad_l + bubble._pad_r + 2  # 여유 2px
+
     def append(self, text: str, role: str = "user"):
-        text=(text or "").strip()
-        if not text: return
-        row=QHBoxLayout(); row.setContentsMargins(0,0,0,0); row.setSpacing(4)
-        bubble=ChatBubble(text, self.user_png if role=="user" else self.bot_png, self.user_slices if role=="user" else self.bot_slices, max_width=self._bounds()[1])
-        bubble.set_fixed_width(self._calc_width(bubble, text))
-        if role=="user": row.addStretch(1); row.addWidget(bubble,0,alignment=Qt.AlignRight)
-        else: row.addWidget(bubble,0,alignment=Qt.AlignLeft); row.addStretch(1)
-        self.v.insertLayout(self.v.count()-1, row)
-        QTimer.singleShot(0, lambda: (self.scroll.verticalScrollBar().setValue(self.scroll.verticalScrollBar().maximum()), self._apply_all()))
+        text = (text or "").strip()
+        if not text:
+            return
+
+        if role == "com":
+            # ★ com은 살짝 딜레이 후 실제 추가
+            QTimer.singleShot(getattr(self, "COM_DELAY_MS", 2000), 
+                            lambda: self._append_row(text, role))
+        else:
+            # user는 즉시 추가
+            self._append_row(text, role)
+
+    def _append_row(self, text: str, role: str):
+        # 1) 행 레이아웃 구성
+        row_layout = QHBoxLayout()
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(4)
+
+        bubble = ChatBubble(
+            text,
+            self.user_png if role == "user" else self.bot_png,
+            self.user_slices if role == "user" else self.bot_slices,
+            max_width=self._bounds()[1]
+        )
+
+        # 2) 한 줄이면 wrap 끄고 폭 결정
+        min_w, max_w = self._bounds()
+        fm = bubble.lbl.fontMetrics()
+        single_px = max(fm.horizontalAdvance(text), fm.boundingRect(text).width()) + bubble._pad_l + bubble._pad_r + 2
+        force_single = single_px <= max_w
+        bubble.lbl.setWordWrap(not force_single)  # == force_single ? False : True
+        bubble.lbl.setWordWrap(not force_single)
+        target_w = max(min_w, min(max_w, single_px))
+        bubble.set_fixed_width(target_w)
+
+        if role == "user":
+            row_layout.addStretch(1)
+            row_layout.addWidget(bubble, 0, alignment=Qt.AlignRight)
+        else:
+            row_layout.addWidget(bubble, 0, alignment=Qt.AlignLeft)
+            row_layout.addStretch(1)
+
+        # 3) 행 컨테이너(펼치기/페이드 애니메이션용)
+        row_container = QWidget(self.container)
+        row_container.setAttribute(Qt.WA_TranslucentBackground, True)
+        row_container.setLayout(row_layout)
+        row_container.setMaximumHeight(1)  # 접힌 상태로 시작
+
+        eff = QGraphicsOpacityEffect(row_container)
+        row_container.setGraphicsEffect(eff)
+        eff.setOpacity(0.0)
+
+        # 아래 정렬 유지: 맨 끝에 추가
+        self.v.addWidget(row_container)
+
+        # 4) 실제 높이 측정 후 애니메이션
+        row_container.adjustSize()
+        target_h = max(1, row_container.sizeHint().height())
+
+        grow = QPropertyAnimation(row_container, b"maximumHeight", self)
+        grow.setStartValue(1)
+        grow.setEndValue(target_h)
+        grow.setDuration(250)
+        grow.setEasingCurve(QEasingCurve.OutCubic)
+
+        fade = QPropertyAnimation(eff, b"opacity", self)
+        fade.setStartValue(0.0)
+        fade.setEndValue(1.0)
+        fade.setDuration(220)
+        fade.setEasingCurve(QEasingCurve.OutCubic)
+
+        def _after():
+            self._apply_all()
+            self._smooth_scroll_to_bottom(dur=240)
+
+        grow.finished.connect(_after)
+        # 참조 유지(가비지 방지)
+        if not hasattr(self, "_row_anims"):
+            self._row_anims = []
+        self._row_anims.append((grow, fade))
+        grow.start(); fade.start()
+
     def clear(self):
-        while self.v.count() > 1:
-            item = self.v.takeAt(0)
-            if item is None: continue
-            lay=item.layout()
+        for idx in range(self.v.count()-1, 0, -1):
+            item = self.v.takeAt(idx)
+            if not item:
+                continue
+            lay = item.layout()
             if lay:
                 while lay.count():
-                    w=lay.takeAt(0).widget()
-                    if w: w.setParent(None); w.deleteLater()
+                    w = lay.takeAt(0).widget()
+                    if w:
+                        w.setParent(None); w.deleteLater()
             else:
-                w=item.widget()
-                if w: w.setParent(None); w.deleteLater()
-    def _bounds(self) -> Tuple[int, int]: # <<< 2차 수정된 부분
-        vw=self.scroll.viewport().width() or self.width() or 400; max_w=max(120,vw-30); min_w=50; return min_w, max_w
-    def _calc_width(self,bubble:QWidget,text:str)->int:
-        min_w,max_w=self._bounds(); fm=bubble.lbl.fontMetrics(); single_px=fm.horizontalAdvance(text)+bubble._pad_l+bubble._pad_r
-        if single_px>max_w: return max_w
+                w = item.widget()
+                if w:
+                    w.setParent(None); w.deleteLater()
+
+                
+    def _bounds(self) -> Tuple[int, int]:
+        vw = self.scroll.viewport().width() or self.width() or 400
+        min_w = max(70, int(vw * 0.05))     # 화면의 5%
+        max_w = max(min_w+40, int(vw * 0.94))  # 화면의 94%
+        return min_w, max_w
+    
+    def _calc_width(self, bubble: QWidget, text: str) -> int:
+        min_w, max_w = self._bounds()
+        fm = bubble.lbl.fontMetrics()
+        single_px = fm.horizontalAdvance(text) + bubble._pad_l + bubble._pad_r
+        if single_px > max_w:
+            return max_w
         return max(min_w, single_px)
+
+    
     def _apply_all(self):
         for i in range(self.v.count()):
             item = self.v.itemAt(i)

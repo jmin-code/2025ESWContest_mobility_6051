@@ -1,0 +1,8 @@
+torch
+tensorflow
+mediapipe
+opencv-python
+joblib
+PySide6
+requests
+pyserial
