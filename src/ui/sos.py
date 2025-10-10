@@ -184,9 +184,9 @@ class SOSPage(QWidget):
         self._map_ready = True
         lat, lng = self._latlng if self._latlng else (DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
         self._update_map_location(lat, lng)
-
+        
     def _update_map_location(self, lat: float, lng: float):
-        js_code = f"updateCurrentLocation({lat}, {lng});"
+        js_code = f"window.updateCurrentLocation({lat}, {lng});"
         self.web.page().runJavaScript(js_code)
 
     def resizeEvent(self, e):
