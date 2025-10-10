@@ -19,8 +19,8 @@ SERVER_IP = "10.0.0.23"
 SERVER_PORT = 12345
 
 # GPS 신호가 없을 때 사용할 기본 위치 (예: 인하대학교)
-DEFAULT_LATITUDE = 37.4505
-DEFAULT_LONGITUDE = 126.6572
+DEFAULT_LATITUDE = 37.449120
+DEFAULT_LONGITUDE = 126.655856
 
 
 class SOSPage(QWidget):
@@ -182,9 +182,16 @@ class SOSPage(QWidget):
             print("[SOS] 맵 로드 실패!")
             return
         self._map_ready = True
+
+        QTimer.singleShot(100, self._update_map_to_current_location)
+
+    def _update_map_to_current_location(self):
+        if not self._map_ready:
+            return
         lat, lng = self._latlng if self._latlng else (DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
         self._update_map_location(lat, lng)
-        
+
+
     def _update_map_location(self, lat: float, lng: float):
         js_code = f"window.updateCurrentLocation({lat}, {lng});"
         self.web.page().runJavaScript(js_code)

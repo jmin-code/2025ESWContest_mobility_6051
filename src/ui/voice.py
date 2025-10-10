@@ -32,7 +32,6 @@ class SpeakerThread(QThread):
 
     def run(self):
         try:
-            print("[voice] speak_stream start")
             speak_stream(self.text, self.lang)
         except Exception as e:
             print(f"[voice] audio error: {e}")
@@ -201,6 +200,16 @@ class VoicePage(QWidget):
         except Exception:
             pass
         
+        # ★ 레이스 방지: 최종 텍스트 즉시 확보 시도
+        if (not self._final_text) and self.sign_engine and hasattr(self.sign_engine, "get_hangul_result"):
+            try:
+                val = self.sign_engine.get_hangul_result() or ""
+                self._final_text = val.strip()
+                print("[VoicePage] pulled final text from engine:", self._final_text)
+            except Exception as e:
+                print("[VoicePage] get_hangul_result failed:", e)
+
+        
         self._mode = "transition"
         full = self.rect()
 
@@ -251,7 +260,6 @@ class VoicePage(QWidget):
             elif not self._th or not self._th.isRunning():  # 혹시 실행 중이 아니면 강제 실행
                 self.play(self._final_text)
         else:
-            print(self._final_text)
             print("[VoicePage] no final text yet; waiting for hangul_input_finished")
 
     def _set_voice_ui_visible(self, on: bool):
@@ -440,7 +448,7 @@ class VoicePage(QWidget):
         self._played_this_show = True
         # self.play(self.default_text, caption="음성을 출력 중입니다...")
 
-    def play(self, text: str, lang: str = "ko"):
+    def play(self, text: str, lang: str = "ko", **_ignore):
         if not text or not text.strip():
             print("[VoicePage] play() skipped: empty text")
             self.playback_finished.emit()

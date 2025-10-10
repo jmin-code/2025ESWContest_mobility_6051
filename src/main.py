@@ -14,7 +14,7 @@ BASE_DIR = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedWidget, QHBoxLayout, QLabel, QVBoxLayout, QStackedLayout, QGraphicsOpacityEffect
-from PySide6.QtGui import QFontDatabase, QFont, QPixmap
+from PySide6.QtGui import QFontDatabase, QFont, QPixmap, QTransform
 from PySide6.QtCore import Slot, QThread, QTimer, Signal, QObject, Qt, QEasingCurve, QPropertyAnimation, QParallelAnimationGroup, QRect
 
 DISABLE_GPS = os.getenv("DISABLE_GPS", "").lower() in {"1", "true", "yes", "on"}
@@ -621,44 +621,45 @@ class App(QWidget):
 # =========================================================
 # HUD Window Class for Secondary Monitor
 # =========================================================
+# 필요한 import들
+from PySide6.QtWidgets import QWidget, QLabel, QStackedLayout
+from PySide6.QtGui import QPixmap, QFont, QTransform
+from PySide6.QtCore import Qt, QTimer, Slot
+
 class HUDWindow(QWidget):
     def __init__(self, fonts: dict):
         super().__init__()
         self.setWindowTitle("SignNav HUD")
         self.setStyleSheet("background-color: black;")
 
-        # 카드처럼 위젯을 쌓아놓고 하나씩 보여주는 QStackedLayout 사용
         self.layout = QStackedLayout(self)
         self.setLayout(self.layout)
 
-        # --- 1. 이미지 표시용 라벨 ---
-        self.image_label = QLabel()
-        self.image_label.setAlignment(Qt.AlignCenter)
+        self.display_label = QLabel()
+        self.display_label.setAlignment(Qt.AlignCenter)
 
-        # --- 2. 텍스트 표시용 라벨 ---
-        self.text_label = QLabel()
-        self.text_label.setAlignment(Qt.AlignCenter)
+        self._text_renderer_label = QLabel()
+        self._text_renderer_label.setAlignment(Qt.AlignCenter)
         font = QFont(fonts.get("korean", "Arial"), 100, QFont.Bold)
-        self.text_label.setFont(font)
-        self.text_label.setStyleSheet("color: white;")
+        self._text_renderer_label.setFont(font)
 
-        # --- 3. 아무것도 표시하지 않을 때 쓸 빈 위젯 ---
+        # [수정 1] 배경을 투명하게 만들고, 글자색은 흰색으로 설정합니다.
+        self._text_renderer_label.setStyleSheet("background-color: transparent; color: white;")
+        
+        self._text_renderer_label.setVisible(False)
+
         self.blank_widget = QWidget()
-
-        # 생성한 위젯들을 레이아웃에 추가
-        self.layout.addWidget(self.image_label)
-        self.layout.addWidget(self.text_label)
+        
+        self.layout.addWidget(self.display_label)
         self.layout.addWidget(self.blank_widget)
-
-        # 처음에는 빈 화면을 보여주도록 설정
         self.layout.setCurrentWidget(self.blank_widget)
 
-        # --- Timers and Image Paths ---
         self.static_image_path = None
         self.temp_image_timer = QTimer(self)
         self.temp_image_timer.setSingleShot(True)
         self.temp_image_timer.timeout.connect(self._restore_static_image)
 
+        # ... (gesture_images 딕셔너리는 그대로) ...
         self.gesture_images = {
             'arrival': ASSETS / "HUD" / "HUD_nav.png",
             'description': ASSETS / "HUD" / "HUD_discript.png",
@@ -668,46 +669,52 @@ class HUDWindow(QWidget):
             'delete': ASSETS / "HUD" / "HUD_warning.png"
         }
 
-    def _set_pixmap(self, image_path):
-        """이미지 경로를 받아 QLabel에 표시하고, 화면에 꽉 채우는 함수"""
-        if image_path and image_path.exists():
-            pixmap = QPixmap(str(image_path))
-            # 창 크기(self.size())에 맞춰 비율을 무시하고 이미지를 채웁니다.
-            self.image_label.setPixmap(pixmap.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
-        else:
-            self.image_label.clear()
+    def _set_flipped_pixmap(self, pixmap: QPixmap):
+        if pixmap.isNull():
+            self.display_label.clear()
+            return
+
+        transform = QTransform().scale(-1, 1)
+        flipped_pixmap = pixmap.transformed(transform)
+        scaled_pixmap = flipped_pixmap.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
+        self.display_label.setPixmap(scaled_pixmap)
 
     def _restore_static_image(self):
-        """타이머 종료 후, 고정 이미지(예: HUD_recog) 또는 빈 화면으로 복원"""
-        if self.static_image_path:
-            self._set_pixmap(self.static_image_path)
-            self.layout.setCurrentWidget(self.image_label)
+        if self.static_image_path and self.static_image_path.exists():
+            pixmap = QPixmap(str(self.static_image_path))
+            self._set_flipped_pixmap(pixmap)
+            self.layout.setCurrentWidget(self.display_label)
         else:
             self.layout.setCurrentWidget(self.blank_widget)
 
     def set_static_image(self, image_path):
-        """페이지에 고정될 이미지를 설정하고 표시"""
         self.static_image_path = image_path
         self._restore_static_image()
 
     @Slot(str)
     def show_gesture_image(self, gesture: str):
-        """제스처 이미지를 2초간 임시로 표시"""
         image_path = self.gesture_images.get(gesture)
-        if image_path:
-            self._set_pixmap(image_path)
-            self.layout.setCurrentWidget(self.image_label) # 이미지 라벨을 맨 위로 올림
+        if image_path and image_path.exists():
+            pixmap = QPixmap(str(image_path))
+            self._set_flipped_pixmap(pixmap)
+            self.layout.setCurrentWidget(self.display_label)
             self.temp_image_timer.start(2000)
 
     @Slot(str)
     def update_text(self, text: str):
-        """한글 텍스트를 표시"""
-        self.text_label.setText(text)
-        self.layout.setCurrentWidget(self.text_label) # 텍스트 라벨을 맨 위로 올림
+        self._text_renderer_label.setText(text)
+        
+        # [수정 2] 렌더링 전에 라벨의 크기를 창 크기와 동일하게 설정합니다.
+        self._text_renderer_label.setGeometry(self.rect())
+
+        text_pixmap = QPixmap(self.size())
+        text_pixmap.fill(Qt.transparent)
+        self._text_renderer_label.render(text_pixmap)
+        
+        self._set_flipped_pixmap(text_pixmap)
+        self.layout.setCurrentWidget(self.display_label)
 
     def clear_text(self):
-        """텍스트를 지우고 고정 이미지나 빈 화면으로 돌아감"""
-        self.text_label.clear()
         self._restore_static_image()
 
 # --- Application Entry Point ---
