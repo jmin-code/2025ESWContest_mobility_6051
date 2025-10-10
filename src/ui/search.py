@@ -39,7 +39,7 @@ class SearchPage(QWidget):
         
         self.is_map_locked = False
         # <<< 수정: GPS가 연결되지 않았을 때 사용할 기본 위치 설정 (서울 시청)
-        self.current_location = (37.5665, 126.9780) 
+        self.current_location = (37.449120, 126.655856) 
         self._map_ready = False
 
         # --- 배경 ---

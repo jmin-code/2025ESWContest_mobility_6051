@@ -13,8 +13,8 @@ app = Flask(__name__)
 # --- 실시간 GPS 데이터를 저장할 변수 ---
 gps_data_lock = threading.Lock()
 latest_gps_data = {
-    "lat": 37.6005,  # 초기값: 인하대학교
-    "lon": 126.72,
+    "lat": 37.449120,  # 초기값: 인하대학교
+    "lon": 126.655856,
     "spd": 0
 }
 
