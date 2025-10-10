@@ -38,7 +38,6 @@ class SearchPage(QWidget):
         self.view_initialized = False
         
         self.is_map_locked = False
-        # <<< 수정: GPS가 연결되지 않았을 때 사용할 기본 위치 설정 (서울 시청)
         self.current_location = (37.449120, 126.655856) 
         self._map_ready = False
 
@@ -46,7 +45,7 @@ class SearchPage(QWidget):
         self.bg = QLabel(self); self.bg.setAlignment(Qt.AlignCenter)
         self.pm_bg = self._load_pix(self.assets / "bg" / "nav_bg.png")
 
-        # --- WebEngine 설정 (기존과 동일) ---
+        # --- WebEngine 설정
         self.web_view = QWebEngineView(self)
         profile = QWebEngineProfile.defaultProfile()
         profile.setUrlRequestInterceptor(_NetLogger(self))
@@ -57,7 +56,7 @@ class SearchPage(QWidget):
         self.web_view.setPage(page)
         self.web_view.loadFinished.connect(self._on_map_loaded) # loadFinished 시그널 변경
 
-        # --- 카메라/라벨/채팅 (기존과 동일) ---
+        # --- 카메라/라벨/채팅
         self.camera_view = QLabel(self); self.camera_view.setStyleSheet("background-color: black;")
         self.lbl_hangul = QLabel("", self)
         self.lbl_hangul.setFont(QFont(self.fonts.get("korean", "Arial"), 22, QFont.Bold))
@@ -68,7 +67,7 @@ class SearchPage(QWidget):
         self.chat = ChatPanel(str(user_png), str(bot_png), parent=self)
         self.chat.setObjectName("searchChat"); self.chat.hide()
         
-        # --- 버튼 (기존과 동일) ---
+        # --- 버튼
         def mk_icon(fname, cb):
             b = QPushButton(self); pm = self._load_pix(self.assets / "icons" / fname)
             if not pm.isNull(): b.setIcon(QIcon(pm))
@@ -80,14 +79,13 @@ class SearchPage(QWidget):
         self.btn_recog = mk_icon("nav_b.png", self.on_recog)
         self.btn_sos   = mk_icon("sos.png", self.on_sos)
 
-        # --- 시그널 연결 (기존과 동일) ---
+        # --- 시그널 연결
         if self.sign_engine:
             self.sign_engine.frame_updated.connect(self.set_camera_image)
             self.sign_engine.hangul_result_updated.connect(self.lbl_hangul.setText)
 
-        # <<< 수정: 버튼 클릭 시 _recenter_map_once 슬롯에 연결
         self.btn_recenter = QPushButton("현위치", self)
-        self.btn_recenter.setStyleSheet("""...""") # 스타일은 위 navigation.py와 동일
+        self.btn_recenter.setStyleSheet("""...""") 
         self.btn_recenter.setCursor(Qt.PointingHandCursor)
         self.btn_recenter.clicked.connect(self._recenter_map_once)
         self.btn_recenter.hide()
@@ -96,7 +94,6 @@ class SearchPage(QWidget):
 
     def showEvent(self, e):
         super().showEvent(e)
-        # 페이지가 보일 때마다 지도 고정 해제 및 실시간 추적 모드로 초기화
         self.is_map_locked = False
         self.btn_recenter.hide()
         self.lbl_hangul.setText("주변 인프라 탐색")
@@ -104,7 +101,7 @@ class SearchPage(QWidget):
         if not self.view_initialized:
             self.load_initial_view()
             self.view_initialized = True
-        # GPS가 연결되지 않아도, 기본 위치를 사용해 지도 설정
+
         self.set_location(*self.current_location)
 
         if self.sign_engine:
@@ -115,17 +112,17 @@ class SearchPage(QWidget):
         if not ok: return
         self._map_ready = True
         print("[SearchPage] 맵 로드 완료. 초기 위치 주입 시도.")
-        # GPS가 연결되지 않아도, 기본 위치를 사용해 지도 설정
+
         self.set_location(*self.current_location)
             
     def load_initial_view(self):
         self.web_view.load(QUrl("http://localhost:5050/search.html"))
         self.lbl_hangul.setText("주변 인프라 탐색")
 
-    # <<< 추가: main.py로부터 실시간 GPS 좌표를 받는 슬롯
+
     @Slot(float, float)
     def set_location(self, lat: float, lng: float):
-        # <<< 변경: GPS 신호가 들어오면 기본 위치를 덮어씁니다.
+
         self.current_location = (lat, lng)
         if self.is_map_locked:
             return # 고정 상태에서는 자동 이동 안함
@@ -146,17 +143,11 @@ class SearchPage(QWidget):
         js_code = f"runNearbySearch('{keyword.strip()}', {lat}, {lng});"
         self.web_view.page().runJavaScript(js_code)
         self.lbl_hangul.setText(f"검색: {keyword}")
-        # try:
-        #     self.chat.append(keyword, role="user")
-        #     self.chat.append("주변을 탐색합니다.", role="bot")
-        # except Exception:
-        #     pass
+
 
         try:
             self.chat.append(keyword, role="user")
-            # "주변을 탐색합니다." 대신 더 명확한 로딩 메시지로 변경합니다.
         except Exception as e:
-            # 디버깅을 위해 에러를 출력하는 코드를 추가하는 것이 좋습니다.
             print(f"Error appending to chat: {e}")
 
     @Slot(QImage)
@@ -165,7 +156,6 @@ class SearchPage(QWidget):
             pm = QPixmap.fromImage(qt_image)
             self.camera_view.setPixmap(pm.scaled(self.camera_view.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
 
-    # === 유틸/레이아웃 (이하 기존과 동일) ===
     def _load_pix(self, path):
         pm = QPixmap(str(path))
         if not pm.isNull() and (pm.width() >= self.BASE_W*2 or pm.height() >= self.BASE_H*2):
