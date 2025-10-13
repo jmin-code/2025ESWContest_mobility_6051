@@ -14,7 +14,6 @@ HANGUL_LABELS = {
     32: 'ㄲ', 33: 'ㄸ', 34: 'ㅃ', 35: 'ㅆ', 36: 'ㅉ', 47: ' ', 48: 'backspace'
 }
 
-# 집합(Set)으로 자/모음 확인 성능 향상
 CHOSUNG_SET = set(CHOSUNG_LIST)
 JUNGSUNG_SET = set(JUNGSUNG_LIST)
 JONGSUNG_SET = set(JONGSUNG_LIST)
@@ -120,7 +119,6 @@ class HangulComposer:
             self.flush_all_pending()
             self.result_queue.append(' ')
         elif label == 'backspace':
-            # *** 여기가 수정된 부분입니다 ***
             if self.state == State.PENDING_JONG:
                 # 종성 입력 대기 상태: 종성만 삭제
                 self.buffer[2] = None

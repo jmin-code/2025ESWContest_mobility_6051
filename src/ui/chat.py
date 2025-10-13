@@ -19,7 +19,7 @@ def _pm(path: str) -> QPixmap:
         _PIXMAP_CACHE[path] = pm
     return pm
 
-def _caps_for(pm: QPixmap, path: str) -> Tuple[int,int,int,int]: # <<< 1차 수정된 부분
+def _caps_for(pm: QPixmap, path: str) -> Tuple[int,int,int,int]: 
     w, h = pm.width(), pm.height()
     if w <= 0 or h <= 0: return (10, 10, 10, 10)
     name = os.path.basename(path)
@@ -68,7 +68,7 @@ class ChatBubble(QWidget):
         self._pad_v_multi  = 2
         self.is_bot = ("com_bubble" in os.path.basename(bubble_png).lower())
         
-        self.TEXT_BIAS_USER = 0   # ▶ 유저 버블: 텍스트를 오른쪽으로 밀고 싶을 때 (좌패딩 +10)
+        self.TEXT_BIAS_USER = 0   # 유저 버블: 텍스트를 오른쪽으로 밀고 싶을 때 (좌패딩 +10)
         self.TEXT_BIAS_BOT  = 0    # 봇은 필요 없으면 0
         self.bg_opacity = 0.45 if self.is_bot else 1.0 
         self.COM_DELAY_MS = 2000

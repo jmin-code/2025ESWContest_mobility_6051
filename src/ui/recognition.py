@@ -22,16 +22,14 @@ class RecognitionPage(QWidget):
 
         self.camera_view = QLabel(self)
         self.camera_view.setStyleSheet("background-color: black;")
-        # self.img_sign_bg = QLabel(self)
-        # self.pm_sign_bg = self._load_pix(self.assets / "icons" / "sign_recognized_recog.png")
-        
-        # 상태 아이콘: 기본 ready, 관절 추출 중 recognizing, 제스처 확정 recognized
+
         self.img_status = QLabel(self)
         self.pm_ready       = self._load_pix(self.assets / "icons" / "ready.png")
         self.pm_recognizing = self._load_pix(self.assets / "icons" / "recognizing.png")
         self.pm_recog       = self._load_pix(self.assets / "icons" / "sign_recognized_recog.png")
         self._status_current = "ready"
         self._status_prev_nonblink = "ready"
+
         from PySide6.QtCore import QTimer
         self._status_timer = QTimer(self); self._status_timer.setSingleShot(True)
         self._status_timer.timeout.connect(lambda: self._set_status(self._status_prev_nonblink))
@@ -124,11 +122,10 @@ class RecognitionPage(QWidget):
             if hasattr(self.sign_engine, 'switch_to_gesture_mode'):
                  self.sign_engine.switch_to_gesture_mode()
                  
-        # self.lbl_gesture.setText("...")
+
         self.lbl_hangul.setText("")
         self.lbl_gesture.hide()
-        # self._relayout()
-        # self.lbl_gesture.setText("...")
+
         self.lbl_hangul.setText("")
         self._relayout()
         self.chat.show(); self.chat.raise_()
@@ -137,21 +134,20 @@ class RecognitionPage(QWidget):
             self.chat.clear()
             self.append_bot_text("안녕하세요! 무엇을 도와드릴까요? 😊")
             self._welcome_sent = True
-        #self._set_status("ready")
+
         
 
     def hideEvent(self, event):
         self._welcome_sent = False
         super().hideEvent(event)
         
-        # [ADD] voice 창 실행 함수 (별도 프로세스, 메인 UI 블로킹 없음)
+
     def _launch_voice(self, text="안녕하세요. 음성 안내 모드가 실행됩니다.", caption="음성을 출력 중입니다..."):
         if self._voice_cooldown:
             return
         self._voice_cooldown = True
         self._voice_cd_timer.start(2500)  # 2.5초 쿨다운 (원하면 조정)
 
-        # 1) 패키지 모듈로 실행: python -m ui.voice --say ... --caption ...
         ok = QProcess.startDetached(
             sys.executable,
             ["-m", "ui.voice", "--say", text, "--caption", caption]
@@ -179,7 +175,6 @@ class RecognitionPage(QWidget):
         if not text: return
         t = text.strip().lower()
         
-        # 'recognized' 점등 타이머가 도는 동안은 ready/recognizing 로의 변경을 무시
         if self._status_timer.isActive():
             # 인식 확정 신호가 또 오면 점등 시간만 갱신
             if any(k in t for k in ("recognized", "확인", "검출", "인식")):
@@ -243,10 +238,6 @@ class RecognitionPage(QWidget):
 
         self.camera_view.setGeometry(self._map_from_design(fit, 17, 81, w=478, h=341))
         
-        # sign_bg_rect = self._map_from_design(fit, 328, 442, right=330, bottom=16)
-        # self.img_sign_bg.setGeometry(sign_bg_rect)
-        # if not self.pm_sign_bg.isNull():
-        #     self.img_sign_bg.setPixmap(self.pm_sign_bg.scaled(sign_bg_rect.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation))
             
         sign_bg_rect = self._map_from_design(fit, 328, 442, right=330, bottom=16)
         self.img_status.setGeometry(sign_bg_rect)
@@ -256,7 +247,7 @@ class RecognitionPage(QWidget):
         gesture_rect = QRect(sign_bg_rect.x(), sign_bg_rect.y(), sign_bg_rect.width(), int(sign_bg_rect.height() * 0.5))
         hangul_rect = QRect(sign_bg_rect.x(), sign_bg_rect.y() + gesture_rect.height(), sign_bg_rect.width(), int(sign_bg_rect.height() * 0.5))
         self.lbl_gesture.setGeometry(gesture_rect)
-        self.lbl_gesture.setVisible(False)  # 레이아웃 시에도 계속 숨김
+        self.lbl_gesture.setVisible(False)
         self.lbl_hangul.setGeometry(hangul_rect)
         
         # hatPanel을 '우측 패널'에 꽉 차게 배치
@@ -265,7 +256,6 @@ class RecognitionPage(QWidget):
         if not self.chat.isVisible(): self.chat.show()
         self.chat.raise_()
 
-        # 채팅 UI 도입으로 기존 라벨은 보조 역할만 수행 (원하면 숨김)
         self.lbl_hangul.setVisible(False)
 
         for btn, x, y, w, h in (

@@ -13,7 +13,7 @@ from PySide6.QtWebEngineCore import QWebEnginePage
 
 
 # <<< 중요!! >>>
-# 아래 IP 주소를 위치 정보를 수신할 컴퓨터의 실제 IP 주소로 반드시 변경해야 합니다.
+# 아래 IP 주소를 위치 정보를 수신할 컴퓨터의 실제 IP 주소로 반드시 변경해야 함
 # 예: SERVER_IP = "192.168.0.10"
 SERVER_IP = "10.0.0.23"
 SERVER_PORT = 12345

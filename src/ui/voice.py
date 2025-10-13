@@ -88,10 +88,7 @@ class VoicePage(QWidget):
         # 음성 아이콘 UI (초기엔 숨김)
         self.mic_label  = QLabel(self); self.mic_label.setAlignment(Qt.AlignCenter)
         self.load_label = QLabel(self); self.load_label.setAlignment(Qt.AlignCenter)
-        # self.text_label = QLabel("음성을 출력 중입니다...", self)
-        # self.text_label.setAlignment(Qt.AlignCenter)
-        # self.text_label.setStyleSheet("color: white;")
-        # self.text_label.setFont(QFont("Arial", 28))
+
         
         self._final_text: str = ""
         self._pending_tts: bool = False
@@ -168,11 +165,7 @@ class VoicePage(QWidget):
 
         self._hint_opacity = QGraphicsOpacityEffect(self.bottom_hint)
         self.bottom_hint.setGraphicsEffect(self._hint_opacity)
-        # self._hint_fade = QPropertyAnimation(self._hint_opacity, b"opacity", self)
-        # self._hint_fade.setDuration(300)
-        # self._hint_fade.setStartValue(1.0)
-        # self._hint_fade.setEndValue(0.0)
-        # self._hint_fade.finished.connect(self.bottom_hint.hide)
+
         self._hint_fade = None
 
         # 엔진 시그널 연결(프레임 갱신)
@@ -231,12 +224,6 @@ class VoicePage(QWidget):
         self._set_voice_ui_visible(True)
         self._mode = "voice"
         
-        # try:
-        #     self._hint_fade.stop()
-        #     self._hint_opacity.setOpacity(1.0)
-        #     self._hint_fade.start()
-        # except Exception:
-        #     self.bottom_hint.hide()
         
         # 하단 텍스트를 보이스 화면에서도 계속 표시
         self._hint_opacity.setOpacity(1.0)
@@ -247,10 +234,6 @@ class VoicePage(QWidget):
         # 전환 직후에도 마지막 텍스트 유지
         self.set_bottom_text(self._final_text or "인식된 문장을 음성으로 안내합니다")
 
-
-        # 기본 자막 업데이트
-        # if hasattr(self, "set_bottom_text"):
-        #     self.set_bottom_text(self._final_text or "음성 안내를 시작합니다...")
 
         # ★ 최종 문자열이 이미 도착했다면 그걸 재생, 아니면 대기
         if self._final_text:
@@ -399,11 +382,7 @@ class VoicePage(QWidget):
 
     # ---------- 음성 아이콘/로더/TTS ----------
     def _apply_pixmaps(self):
-        # if not self._bg.isNull():
-        #     self.bg_label.setPixmap(self._bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
-        #     self.bg_label.lower()
-        # if not self._mic.isNull():
-        #     self.mic_label.setPixmap(self._mic.scaled(144, 144, Qt.KeepAspectRatio, Qt.SmoothTransformation))
+
         if not self._bg.isNull():
             self.bg_label.setPixmap(
                 self._bg.scaled(self.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)

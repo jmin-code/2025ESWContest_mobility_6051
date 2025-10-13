@@ -53,7 +53,6 @@ class SignEngine(QObject):
         self.mode = 'GESTURE'
         self.composer = HangulComposer()
         self.cap = None
-        # *** 라벨 맵 변수 추가 ***
         self.idx2id = None
 
         self.pause_end_time = 0
@@ -90,7 +89,6 @@ class SignEngine(QObject):
     def _load_resources(self):
         try:
             self.status_updated.emit("Checking model files...")
-            # *** 라벨 맵 파일 존재 여부 확인 추가 ***
             for p in [HANGUL_MODEL_PATH, SCALER_PATH, GESTURE_LSTM_CKPT, GESTURE_LSTM_META, HANGUL_LABEL_MAP_PATH]:
                 if not Path(p).exists(): raise FileNotFoundError(f"Cannot find model: {p}")
             
