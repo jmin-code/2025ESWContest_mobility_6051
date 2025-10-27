@@ -1,6 +1,12 @@
 # 🤟 수어 제스처 기반 생성형 AI 인터페이스
 ### 실시간 수어 및 제스처 인식을 통해 길찾기, 인프라 검색, 장소 정보 검색, 음성 변환, SOS 구조 요청의 기능을 통합하여 청각 및 언어 장애가 있는 운전자의 편의성과 안전한 주행을 지원하는 스마트 보조 시스템이다. 
 
+<p align="center">
+  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/IMG_4256.jpeg" width="30%">
+  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/display.png" width="30%">
+  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/hud.png" width="30%">
+</p>
+
 ---
 
 ## 📖 작품 개요
@@ -91,61 +97,51 @@
     + 긴급 SOS: 사전 등록된 보호자 또는 119에 현재위치의 주소를 알리며 구조를 요청.
 
 ---
+## 📁 프로젝트 구조
 
-✨ 작품의 특징 및 장점
-하나로 통합된 올인원(All-in-One) 솔루션
-단순한 번역기를 넘어, 의사소통 보조, 길안내, 비상 연락 기능을 하나의 휴대용 기기에 통합하여 사용자의 편의성을 극대화.
-
-뛰어난 휴대성과 실용성
-저전력, 소형 컴퓨팅 모듈인 라즈베리파이를 기반으로 제작되어 어디서든 간편하게 휴대하며 사용할 수 있다.
-
-끊김 없는 양방향 의사소통
-수어를 음성으로 변환(STT)하는 기능과 상대방의 음성을 텍스트로 표시(TTS)하는 기능을 모두 지원하여, 장애인과 비장애인 간의 원활하고 자연스러운 대화를 가능하게 합니다.
-
-사용자 안전을 최우선으로 고려한 기능
-GPS 기반의 실시간 위치 확인 및 경로 안내는 사용자가 낯선 곳에서도 안전하게 이동할 수 있도록 돕습니다. 또한, 원터치 SOS 기능은 위급 상황에서 신속한 대응을 가능하게 하여 사용자의 안전을 보장합니다.
-
-직관적이고 편리한 사용자 인터페이스(UI)
-각 기능별로 최적화된 화면을 구성하고, 큰 아이콘과 명확한 텍스트를 사용하여 누구나 쉽게 배우고 사용할 수 있도록 설계했습니다.
-
-🛠️ 하드웨어 요구사항
-본 프로젝트를 구동하기 위해 필요한 하드웨어는 다음과 같습니다.
-
-메인보드: Raspberry Pi 4 Model B (4GB 이상 권장)
-
-카메라: Raspberry Pi Camera Module V2 또는 USB 웹캠
-
-디스플레이: 5인치 터치 스크린 (해상도 800x480)
-
-GPS: NEO-6M GPS 모듈
-
-오디오: USB 마이크 및 스피커
-
-기타: 보조 배터리, 케이스 등
-
-⚙️ 소프트웨어 및 설치
-요구사항
-운영체제: Raspberry Pi OS (Legacy, 32-bit)
-
-프로그래밍 언어: Python 3.8+
-
-주요 라이브러리:
-
-PyQt5: GUI 프레임워크
-
-OpenCV-python: 컴퓨터 비전 처리
-
-TensorFlow / PyTorch: 딥러닝 모델 실행
-
-MediaPipe: 손동작 랜드마크 추출
-
-gTTS: Google Text-to-Speech
-
-pyserial: GPS 시리얼 통신
-
-requests: API 통신
-
-
+```bash
+src/
+├── core/                  # 핵심 로직 (수어 인식, GPS, TTS 등)
+│   ├── bus.py
+│   ├── ctc_model.py
+│   ├── gps_reader.py
+│   ├── hangul_composer.py
+│   ├── picam.py
+│   ├── sign_engine.py
+│   ├── state.py
+│   ├── tts.py
+│   └── webcam.py
+│
+├── ui/                    # PyQt5 기반 UI 화면 및 리소스
+│   ├── assets/        
+│   ├── chat.py
+│   ├── description.py
+│   ├── location_provider.py
+│   ├── navigation.py
+│   ├── recognition.py
+│   ├── search.py
+│   ├── sos.py
+│   ├── sos_receiver.py
+│   ├── voice.py
+│   ├── warning.py
+│   └── welcome.py
+│
+├── CTC/                   # CTC 모델 학습 관련 파일
+│   ├── gesture_ctc_model.pth
+│   ├── gesture_labels.json
+│   └── ...
+│
+├── SignLanguage_Detect/   # 수어 데이터 수집 및 테스트 코드
+│   ├── collect_Hangul.py
+│   └── ...
+│
+├── Kakao_API/             # 카카오맵 API 관련 HTML/JS 파일
+│   └── index.html
+│
+├── config.py              # 전역 설정 파일
+├── gps.py                 # GPS 테스트용 스크립트
+└── main.py                # 프로그램 메인 실행 파일
+```
 ---
 
 ## 개발환경
