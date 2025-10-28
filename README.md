@@ -1,11 +1,22 @@
 # 🤟 수어 제스처 기반 생성형 AI 인터페이스
 ### 실시간 수어 및 제스처 인식을 통해 길찾기, 인프라 검색, 장소 정보 검색, 음성 변환, SOS 구조 요청의 기능을 통합하여 청각 및 언어 장애가 있는 운전자의 편의성과 안전한 주행을 지원하는 스마트 보조 시스템이다. 
 
-<p align="center">
-  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/IMG_4256.jpeg" width="30%">
-  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/display.png" width="30%">
-  <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/hud.png" width="30%">
-</p>
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/IMG_4256.jpeg" width="250px"/><br>
+      <sub>수어 및 제스처 입력</sub>
+    </td>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/display.png" width="250px"/><br>
+      <sub>디스플레이 출력</sub>
+    </td>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/hud.png" width="250px"/><br>
+      <sub>HUD 표시</sub>
+    </td>
+  </tr>
+</table>
 
 ---
 
@@ -95,6 +106,52 @@
     + 음성변환: 수어를 통해 입력한 단어 또는 문장을 음성으로 변환해 스피커를 통해 출력.
 
     + 긴급 SOS: 사전 등록된 보호자 또는 119에 현재위치의 주소를 알리며 구조를 요청.
+
+---
+## 🖥️시스템 UI
+
+| 구분 | 설명 |
+|:--|:--|
+| 🧭 **길찾기 모드 (Navigation Mode)** | 사용자의 수어 명령을 인식하여 카카오맵 API를 통해 최적 경로를 탐색하고, 실시간으로 경로 안내를 제공합니다. |
+| 📍 **인프라 검색 모드 (Infrastructure Search Mode)** | 주유소, 편의점, 병원 등 주변 인프라 시설을 수어 입력으로 검색하고 위치 정보를 지도에 표시합니다. |
+| 🗺️ **장소 정보 검색 모드 (Place Info Mode)** | 특정 장소의 상세 정보를 조회하고, 위치 기반 결과를 시각적으로 제공합니다. |
+| 🗣️ **음성 출력 모드 (Voice Output Mode)** | 인식된 수어 문장을 TTS(Text-To-Speech)로 변환하여 차량 내 스피커를 통해 음성으로 출력합니다. |
+| 🚨 **SOS 모드 (Emergency Mode)** | 긴급 제스처 인식 시, 현재 위치 기반으로 구조 요청 신호를 전송하고 지도 화면에 위치를 표시합니다. |
+
+<table align="center">
+  <tr>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/%EA%B8%B8%EC%B0%BE%EA%B8%B0.png" width="300px"/><br>
+      <sub>네비게이션</sub>
+    </td>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/%EC%A3%BC%EB%B3%80%EC%9D%B8%ED%94%84%EB%9D%BC%EA%B2%80%EC%83%89.png" width="300px"/><br>
+      <sub>주변 인프라 검색</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/%EC%9E%A5%EC%86%8C%EC%A0%95%EB%B3%B4%EA%B2%80%EC%83%89.png" width="300px"/><br>
+      <sub>장소 정보 검색</sub>
+    </td>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/%EC%95%88%EC%A0%84%EB%AA%A8%EB%93%9C.png" width="300px"/><br>
+      <sub>안전 모드</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/Voice.png" width="300px"/><br>
+      <sub>음성 인식</sub>
+    </td>
+    <td align="center">
+      <img src="https://github.com/jmin-code/2025ESWContest_mobility_6051/raw/main/Readme_img/SOS.png" width="300px"/><br>
+      <sub>SOS 호출</sub>
+    </td>
+  </tr>
+</table>
+
+
 
 ---
 ## 📁 프로젝트 구조
