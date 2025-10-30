@@ -14,7 +14,7 @@ from pathlib import Path
 from picamera2 import Picamera2
 
 # --- Path and Module Setup ---
-try:
+try:    
     SRC_DIR = Path(__file__).resolve().parent.parent
     BASE_DIR = SRC_DIR.parent
     sys.path.insert(0, str(SRC_DIR))

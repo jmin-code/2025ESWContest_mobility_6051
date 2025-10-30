@@ -30,7 +30,7 @@ HANGUL = {
 # ID 변경하여 현재 수집할 초성 선택 !!!                                                                                                                   
                                                                                                                                                                                                                                          
               
-CURRENT_CHOSUNG_ID = 47                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    
+CURRENT_CHOSUNG_ID = 9                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               
 
 
 CURRENT_CHOSUNG = HANGUL[CURRENT_CHOSUNG_ID]             
@@ -54,9 +54,9 @@ except KeyError:
                  
 SAVE_DIR = f"./hangul/{CURRENT_CHOSUNG_ID}"
             
-NUM_SAMPLES = 1000   # 이 변수가 총 목표 샘플 개수를 의미합니다.           
+NUM_SAMPLES = 5000   # 이 변수가 총 목표 샘플 개수를 의미합니다.           
 
-
+       
              
 os.makedirs(SAVE_DIR, exist_ok=True)                                                
                    
