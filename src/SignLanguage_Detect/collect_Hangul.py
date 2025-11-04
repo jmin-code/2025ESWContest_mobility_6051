@@ -30,7 +30,7 @@ HANGUL = {
 # ID 변경하여 현재 수집할 초성 선택 !!!                                                                                                                   
                                                                                                                                                                                                                                          
               
-CURRENT_CHOSUNG_ID = 28
+CURRENT_CHOSUNG_ID = 31
 
 CURRENT_CHOSUNG = HANGUL[CURRENT_CHOSUNG_ID]             
                      
