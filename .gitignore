@@ -8,8 +8,7 @@ src/.rasp/
 rasp/
 
 
-*.joblib
-scaler.joblib
+
 
 __pycache__/
 *.pyc
