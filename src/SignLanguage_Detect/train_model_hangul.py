@@ -28,15 +28,15 @@ HANGUL = {
     28: 'ㅚ', 29: 'ㅟ', 30: 'ㅢ',
     31: 'end',
     # --- 쌍자음 추가 ---
-    32: 'ㄲ', 33: 'ㄸ', 34: 'ㅃ', 35: 'ㅆ', 36: 'ㅉ',
+    #32: 'ㄲ', 33: 'ㄸ', 34: 'ㅃ', 35: 'ㅆ', 36: 'ㅉ',
     # --- 특수 키 ---
     47: ' ', 48: 'backspace'
 }
 
 FEATURES = 63
-MODEL_SAVE_PATH = "Model/hangul_chosung_model3.h5"
-LABEL_MAP_SAVE_PATH = os.path.join(os.path.dirname(MODEL_SAVE_PATH), "hangul_label_map.json")
-SCALER_SAVE_PATH = os.path.join(os.path.dirname(MODEL_SAVE_PATH), "scaler.joblib")
+MODEL_SAVE_PATH = "Model/hangul_model.h5"
+LABEL_MAP_SAVE_PATH = os.path.join(os.path.dirname(MODEL_SAVE_PATH), "hangul_label_map1.json")
+SCALER_SAVE_PATH = os.path.join(os.path.dirname(MODEL_SAVE_PATH), "scaler1.joblib")
 
 # --- 2. 데이터 로드 (Data Loading) ---
 X, y = [], []

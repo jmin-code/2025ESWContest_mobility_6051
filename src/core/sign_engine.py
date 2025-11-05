@@ -30,9 +30,9 @@ try:
     MODEL_DIR = BASE_DIR / 'Model'
     GESTURE_LSTM_CKPT = MODEL_DIR / 'gesture_lstm_cls.pth'
     GESTURE_LSTM_META = MODEL_DIR / 'gesture_lstm_cls.json'
-    HANGUL_MODEL_PATH = MODEL_DIR / 'hangul_chosung_model3.h5'
-    SCALER_PATH = MODEL_DIR / 'scaler.joblib'
-    HANGUL_LABEL_MAP_PATH = MODEL_DIR / 'hangul_label_map.json'
+    HANGUL_MODEL_PATH = MODEL_DIR / 'hangul_model.h5'
+    SCALER_PATH = MODEL_DIR / 'scaler1.joblib'
+    HANGUL_LABEL_MAP_PATH = MODEL_DIR / 'hangul_label_map1.json'
 
 except Exception as e:
     print(f"FATAL: Engine setup failed during imports: {e}")
