@@ -11,8 +11,8 @@
     <script>
         kakao.maps.load(() => {
             const params = new URLSearchParams(window.location.search);
-            const lat = parseFloat(params.get('lat') || '37.449120');
-            const lng = parseFloat(params.get('lng') || '126.655856');
+            const lat = parseFloat(params.get('lat') || '37.576738');
+            const lng = parseFloat(params.get('lng') || '126.897859');
 
             const locationCoords = new kakao.maps.LatLng(lat, lng);
             const map = new kakao.maps.Map(document.getElementById('map'), {

@@ -96,9 +96,6 @@ class ChatBubble(QWidget):
         self.setMinimumHeight(min_h_caps)
         self.setMaximumWidth(max_width)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Maximum)
-        f = QFont(self.lbl.font())
-        f.setPointSize(15)          # 원하는 폰트 크기 
-        self.lbl.setFont(f)
         self._apply_wrap_metrics()
 
     # -------- helpers --------
@@ -106,7 +103,7 @@ class ChatBubble(QWidget):
         """DPI 기반 pt 폰트 크기(반응형)."""
         f = QFont(self.lbl.font())
         # 대략 14~18pt 범위 안에서 DPI에 비례
-        pt = max(14, min(18, int(self.logicalDpiY() / 6)))
+        pt = max(20, min(28, int(self.logicalDpiY() / 5)))
         f.setPointSize(pt)
         self.lbl.setFont(f)
 
@@ -136,9 +133,9 @@ class ChatBubble(QWidget):
         line_h = fm.lineSpacing()
 
         # 폰트 기준으로 패딩 스케일 (반응형 내부 여백)
-        self._pad_l = self._pad_r = min(22+3, max(8+3, line_h // 3))
-        self._pad_v_single = min(14, max(4, line_h // 5))
-        self._pad_v_multi  = min(18, max(6, line_h // 4))
+        self._pad_l = self._pad_r = min(34, max(14, line_h * 0.5))
+        self._pad_v_single = min(16, max(4, line_h * 0.45))
+        self._pad_v_multi  = min(20, max(6, line_h * 0.55))
         
         if not self.is_bot:
             self._pad_l += getattr(self, "TEXT_BIAS_USER", 0)
@@ -352,8 +349,8 @@ class ChatPanel(QWidget):
                 
     def _bounds(self) -> Tuple[int, int]:
         vw = self.scroll.viewport().width() or self.width() or 400
-        min_w = max(70, int(vw * 0.05))     # 화면의 5%
-        max_w = max(min_w+40, int(vw * 0.94))  # 화면의 94%
+        min_w = max(90, int(vw * 0.05))     # 화면의 5%
+        max_w = max(min_w+60, int(vw * 0.94))  # 화면의 94%
         return min_w, max_w
     
     def _calc_width(self, bubble: QWidget, text: str) -> int:

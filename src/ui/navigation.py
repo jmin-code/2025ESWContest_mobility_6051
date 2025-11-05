@@ -13,7 +13,7 @@ class NavigationPage(QWidget):
         super().__init__()
         self.assets = assets_dir; self.on_home = on_home; self.on_voice = on_voice; self.on_nav = on_nav; self.on_sos = on_sos
         self.fonts = fonts or {}; self.sign_engine = sign_engine
-        self.seoul_station_coords = (37.554678, 126.970609)
+        self.seoul_station_coords = (37.576738, 126.897859 )
         self.map_initialized = False
         self.current_location = None
 

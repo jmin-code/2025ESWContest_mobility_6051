@@ -132,7 +132,7 @@ class RecognitionPage(QWidget):
 
         if not self._welcome_sent:
             self.chat.clear()
-            self.append_bot_text("안녕하세요! 무엇을 도와드릴까요? 😊")
+            self.append_bot_text("안녕하세요!\n 무엇을 도와드릴까요?")
             self._welcome_sent = True
 
         

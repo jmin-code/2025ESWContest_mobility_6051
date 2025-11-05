@@ -84,8 +84,8 @@
         function initMap() {
             const params = new URLSearchParams(window.location.search);
             // URL 파라미터에서 초기 출발지 좌표를 읽어옴
-            const sLat = parseFloat(params.get('sLat')) || 37.449120; // 기본값 서울역
-            const sLng = parseFloat(params.get('sLng')) || 126.655856;
+            const sLat = parseFloat(params.get('sLat')) || 37.576738; // 기본값 서울역
+            const sLng = parseFloat(params.get('sLng')) || 126.897859;
             startCoords = new kakao.maps.LatLng(sLat, sLng);
 
             const mapContainer = document.getElementById('map');

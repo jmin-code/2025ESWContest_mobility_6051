@@ -38,7 +38,7 @@ class SearchPage(QWidget):
         self.view_initialized = False
         
         self.is_map_locked = False
-        self.current_location = (37.449120, 126.655856) 
+        self.current_location = (37.576738, 126.897859) 
         self._map_ready = False
 
         # --- 배경 ---
