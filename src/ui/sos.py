@@ -14,7 +14,7 @@ from PySide6.QtWebEngineCore import QWebEnginePage
 FONT_PATH = Path("/home/autonav/2025ESWContest_mobility_6051/src/ui/assets/fonts/SourceSans3-SemiBold.ttf")
 
 # ==== SOS 전송 설정 ====
-SERVER_IP = "10.0.0.23"
+SERVER_IP = "10.0.0.22"
 SERVER_PORT = 12345
 
 # GPS 없음 기본 위치(인하대학교 예시)

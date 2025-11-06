@@ -3,6 +3,7 @@
 import sys, io, itertools, argparse
 from pathlib import Path
 from typing import Optional
+import subprocess
 from core.tts import speak_stream
 
 from PySide6.QtCore import (
@@ -182,17 +183,27 @@ class VoicePage(QWidget):
     # ========= 상태 전환 =========
     @Slot()
     def on_end_gesture(self):
-        if self._mode != "camera": return
+        if self._mode != "camera":
+            return
+
         self._freeze_frames = True
         try:
             if self._last_frame_pm:
-                scaled = self._last_frame_pm.scaled(self.camera_label.size(), Qt.KeepAspectRatioByExpanding, Qt.FastTransformation)
+                scaled = self._last_frame_pm.scaled(
+                    self.camera_label.size(),
+                    Qt.KeepAspectRatioByExpanding,
+                    Qt.FastTransformation
+                )
                 self.camera_label.setPixmap(scaled)
-        except Exception: pass
+        except Exception:
+            pass
 
         if (not self._final_text) and self.sign_engine and hasattr(self.sign_engine, "get_hangul_result"):
-            try: self._final_text = (self.sign_engine.get_hangul_result() or "").strip()
-            except Exception as e: print("[VoicePage] get_hangul_result failed:", e)
+            try:
+                val = self.sign_engine.get_hangul_result() or ""
+                self._final_text = val.strip()
+            except Exception as e:
+                print("[VoicePage] get_hangul_result failed:", e)
 
         self._mode = "transition"
         full = self.rect()
@@ -213,10 +224,15 @@ class VoicePage(QWidget):
         f = self.bottom_hint.font(); f.setPointSize(self.VOICE_HINT_PT); f.setBold(False)
         self.bottom_hint.setFont(f)
         self.set_bottom_text(self._final_text or "인식된 문장을 음성으로 안내합니다")
+
         if self._final_text:
-            if self._pending_tts or (not self._th or not self._th.isRunning()):
-                self._pending_tts = False
+            if self._pending_tts:
                 self.play(self._final_text)
+                self._pending_tts = False
+            elif not self._th or not self._th.isRunning():
+                self.play(self._final_text)
+        else:
+            print("[VoicePage] no final text yet; waiting for hangul_input_finished")
 
     def _set_voice_ui_visible(self, on: bool):
         self.mic_label.setVisible(on)
@@ -232,9 +248,12 @@ class VoicePage(QWidget):
     def on_hangul_final(self, text: str):
         self._final_text = (text or "").strip()
         self.set_bottom_text(self._final_text or "인식된 문장이 없어요")
+
         if self._mode != "voice":
             self._pending_tts = True
-        elif self._final_text:
+            return
+
+        if self._final_text:
             self.play(self._final_text)
 
     # ========= 카메라 프레임 =========
@@ -265,6 +284,9 @@ class VoicePage(QWidget):
         self._opacity.setOpacity(1.0)
         self.camera_label.show(); self._set_voice_ui_visible(False)
         self.camera_label.raise_(); self.bottom_hint.raise_()
+        self._final_text = ""
+        self._pending_tts = False
+        
         f = self.bottom_hint.font(); f.setPointSize(self.CAMERA_HINT_PT); f.setBold(True)
         self.bottom_hint.setFont(f); self.bottom_hint.show()
         self._hint_opacity.setOpacity(1.0)
@@ -341,6 +363,13 @@ class VoicePage(QWidget):
             self.bg_label.setPixmap(pm)
             self.bg_label.lower()
 
+    def _apply_pixmaps(self):
+        # mic만 여기서 처리
+        if not self._mic.isNull():
+            sz = self.mic_label.size()
+            self.mic_label.setPixmap(
+                self._mic.scaled(sz, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+            )
     # ========= 기타 =========
     def _tick(self):
         if not self._cycle or not self.load_label.isVisible(): return
@@ -353,7 +382,25 @@ class VoicePage(QWidget):
         self.bottom_hint.setText(text if text else "수화를 시작해 주세요")
         self.bottom_hint.raise_()
         for b in (self.btn_home, self.btn_voice, self.btn_nav, self.btn_sos): b.raise_()
+    
+    @Slot()
+    def autoplay_once(self):
+        if self._played_this_show:
+            return
+        self._played_this_show = True
 
+    def play(self, text: str, lang: str = "ko", **_ignore):
+        if not text or not text.strip():
+            print("[VoicePage] play() skipped: empty text")
+            self.playback_finished.emit()
+            return
+        if self._th and self._th.isRunning():
+            print("[VoicePage] play() skipped: already running")
+            return
+        print("[VoicePage] play():", text)
+        self._th = SpeakerThread(text, lang=lang)
+        self._th.finished.connect(self.playback_finished.emit)
+        self._th.start()
 
 # === CLI ===
 def speak_and_show_ui(text: str, ui_message: Optional[str] = None):

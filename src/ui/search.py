@@ -9,6 +9,7 @@ from PySide6.QtWebEngineCore import (
     QWebEnginePage, QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor
 )
 from ui.chat import ChatPanel
+import urllib.parse
 
 # --- 디버깅용 클래스 ---
 class _NetLogger(QWebEngineUrlRequestInterceptor):
@@ -38,7 +39,7 @@ class SearchPage(QWidget):
 
         self.view_initialized = False
         self.is_map_locked = False
-        self.current_location = None
+        self.current_location = (37.576738, 126.897859)
         self._map_ready = False
 
         # --- 배경 ---
@@ -169,7 +170,8 @@ class SearchPage(QWidget):
 
         lat, lng = self.current_location
         safe_kw = (keyword or "").strip()
-        js_code = f"runNearbySearch({safe_kw!r}, {lat}, {lng});"
+        # js_code = f"runNearbySearch({safe_kw!r}, {lat}, {lng});"
+        js_code = f"runNearbySearch('{keyword.strip()}', {lat}, {lng});"
         self.web_view.page().runJavaScript(js_code)
         self.lbl_hangul.setText(f"검색: {keyword}")
 

@@ -35,6 +35,9 @@ ASSETS = SRC_DIR / "ui" / "assets"
 # --- Constants ---
 ACTIVATION_GESTURE = 'start'
 COMMAND_GESTURES = {'arrival', 'description', 'traffic', 'voice', 'emergency', 'delete'}
+SPEED_THRESHOLD = 20.0 # 속도 제한 임계값 (km/h)
+WARNING_IMAGE_PATH = ASSETS / "HUD" / "HUD_warning.png"
+
 
 # --- Helper Functions ---
 def load_fonts():
@@ -82,6 +85,27 @@ class GPSClient(QObject):
         print("🛑 GPS 클라이언트 중지.")
 
 # =========================================================
+# Warning Page Class
+# =========================================================
+class WarningPage(QWidget):
+    def __init__(self, image_path):
+        super().__init__()
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        label = QLabel()
+        if Path(image_path).exists():
+            pixmap = QPixmap(str(image_path))
+            label.setPixmap(pixmap)
+            label.setScaledContents(True)
+            label.setAlignment(Qt.AlignCenter)
+        else:
+            label.setText("WARNING!")
+            label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+        self.setStyleSheet("background-color: black;")
+
+
+# =========================================================
 # Main App Class
 # =========================================================
 class App(QWidget):
@@ -93,6 +117,7 @@ class App(QWidget):
 
         self.current_location = None
         self.hud_window = None
+        self.is_speeding = False
         self.TRANSITION_MS = 300
         self.TRANSITION_EASING = QEasingCurve.OutQuint
 
@@ -151,6 +176,10 @@ class App(QWidget):
         cb_nav = go("navigation", effect="fade", duration=300)
         cb_sos = go("sos", effect="fade", duration=300)
         cb_recog = cb_home  # 일부 위젯에서 on_recog 이름을 쓰는 경우 대비
+
+        #과속 경고 페이지
+        self.warning_page = WarningPage(WARNING_IMAGE_PATH)
+        self.pages["warning"] = self.warning_page
 
         # Welcome
         self.pages["welcome"] = WelcomePage(
@@ -225,6 +254,7 @@ class App(QWidget):
             self.sign_engine.hangul_input_finished.connect(lambda text: self.hud_window.update_text(text))
 
         self.gps_client.new_location.connect(self._update_location)
+        # self.gps_client.new_gps_data.connect(self._handle_gps_data)
         self.stack.currentChanged.connect(self._on_page_changed)
 
         # sign→chat UIs
@@ -333,6 +363,63 @@ class App(QWidget):
 
         grp.finished.connect(cleanup)
         QTimer.singleShot(duration + 200, lambda: (cleanup() if self._xfer_busy else None))
+        grp.start()
+        self._xfer_anim = grp  # GC 방지
+
+    def _xfer_slide(self, frm: QWidget, to: QWidget, duration: int, easing, *, direction: str, with_fade: bool):
+        r = self.stack.rect(); w, h = r.width(), r.height()
+        dir_ = (direction or "left").lower()
+        if dir_ in ("left", "←"):
+            start_to, end_to = QRect(w, 0, w, h), QRect(0, 0, w, h)
+            start_fr, end_fr = QRect(0, 0, w, h), QRect(-w//20, 0, w, h)  # 살짝 밀려나게
+        elif dir_ in ("right", "→"):
+            start_to, end_to = QRect(-w, 0, w, h), QRect(0, 0, w, h)
+            start_fr, end_fr = QRect(0, 0, w, h), QRect(w//20, 0, w, h)
+        elif dir_ in ("up", "↑", "top"):
+            start_to, end_to = QRect(0, h, w, h), QRect(0, 0, w, h)
+            start_fr, end_fr = QRect(0, 0, w, h), QRect(0, -h//20, w, h)
+        else:  # down
+            start_to, end_to = QRect(0, -h, w, h), QRect(0, 0, w, h)
+            start_fr, end_fr = QRect(0, 0, w, h), QRect(0, h//20, w, h)
+
+        grp = QParallelAnimationGroup(self)
+
+        if frm:
+            a_fr = QPropertyAnimation(frm, b"geometry", self)
+            a_fr.setStartValue(start_fr); a_fr.setEndValue(end_fr)
+            a_fr.setDuration(duration); a_fr.setEasingCurve(easing)
+            grp.addAnimation(a_fr)
+
+        to.setGeometry(start_to)
+        a_to = QPropertyAnimation(to, b"geometry", self)
+        a_to.setStartValue(start_to); a_to.setEndValue(end_to)
+        a_to.setDuration(duration); a_to.setEasingCurve(easing)
+        grp.addAnimation(a_to)
+
+        eff_fr = eff_to = None
+        if with_fade:
+            eff_to = QGraphicsOpacityEffect(to); to.setGraphicsEffect(eff_to)
+            a_op_to = QPropertyAnimation(eff_to, b"opacity", self)
+            a_op_to.setStartValue(0.0); a_op_to.setEndValue(1.0)
+            a_op_to.setDuration(duration); a_op_to.setEasingCurve(easing)
+            grp.addAnimation(a_op_to)
+
+            if frm:
+                eff_fr = QGraphicsOpacityEffect(frm); frm.setGraphicsEffect(eff_fr)
+                a_op_fr = QPropertyAnimation(eff_fr, b"opacity", self)
+                a_op_fr.setStartValue(1.0); a_op_fr.setEndValue(0.0)
+                a_op_fr.setDuration(duration); a_op_fr.setEasingCurve(easing)
+                grp.addAnimation(a_op_fr)
+
+        def cleanup():
+            if eff_to: to.setGraphicsEffect(None)
+            if eff_fr and frm: frm.setGraphicsEffect(None)
+            # 지오메트리 복원
+            to.setGeometry(self.stack.rect())
+            if frm: frm.setGeometry(self.stack.rect())
+            self._xfer_busy = False
+
+        grp.finished.connect(cleanup)
         grp.start()
         self._xfer_anim = grp  # GC 방지
 
@@ -457,6 +544,8 @@ class App(QWidget):
             self.sos_page.set_location(lat, lng)
         if hasattr(self, 'navigation_page') and hasattr(self.navigation_page, 'set_location'):
             self.navigation_page.set_location(lat, lng)
+        if hasattr(self, 'search_page') and hasattr(self.search_page, 'set_location'):
+            self.search_page.set_location(lat, lng)
 
     def closeEvent(self, event):
         print("Main window closing. Shutting down all threads.")
@@ -467,6 +556,35 @@ class App(QWidget):
         if self.gps_thread.isRunning(): self.gps_thread.quit(); self.gps_thread.wait()
         if self.engine_thread.isRunning(): self.engine_thread.quit(); self.engine_thread.wait()
         event.accept()
+
+    @Slot(float, float, float)
+    def _handle_gps_data(self, lat, lng, spd):
+        self.current_location = (lat, lng)
+        
+        if hasattr(self, 'sos_page'): self.sos_page.set_location(lat, lng)
+        if hasattr(self, 'navigation_page') and hasattr(self.navigation_page, 'set_location'):
+            self.navigation_page.set_location(lat, lng)
+
+        is_currently_speeding = spd > SPEED_THRESHOLD
+
+        if is_currently_speeding and not self.is_speeding:
+            print(f"⚠️ 과속 감지! 현재 속도: {spd:.1f} km/h. 경고 화면 표시.")
+            self.is_speeding = True
+            if hasattr(self.sign_engine, 'pause'): self.sign_engine.pause()
+            
+            self.stack.setCurrentWidget(self.warning_page)
+            if self.hud_window: self.hud_window.set_static_image(WARNING_IMAGE_PATH)
+
+        elif not is_currently_speeding and self.is_speeding:
+            print(f"✅ 정상 속도 복귀. 현재 속도: {spd:.1f} km/h. UI 복원.")
+            self.is_speeding = False
+            if hasattr(self.sign_engine, 'resume'): self.sign_engine.resume()
+            
+            self._switch(self.pages["recognition"], effect="fade")
+            if self.hud_window:
+                self._on_page_changed(self.stack.indexOf(self.pages["recognition"]))
+
+
 
 # =========================================================
 # HUD Window Class for Secondary Monitor
@@ -534,11 +652,20 @@ class HUDWindow(QWidget):
 
     @Slot(str)
     def update_text(self, text: str):
-        self.text_label.setText(text)
-        self.layout.setCurrentWidget(self.text_label)
+        self._text_renderer_label.setText(text)
+        
+        self._text_renderer_label.setGeometry(self.rect())
+
+        text_pixmap = QPixmap(self.size())
+        text_pixmap.fill(Qt.transparent)
+        self._text_renderer_label.render(text_pixmap)
+        
+        self._set_flipped_pixmap(text_pixmap)
+        self.layout.setCurrentWidget(self.display_label)
+
 
     def clear_text(self):
-        self.text_label.clear()
+        # self.text_label.clear()
         self._restore_static_image()
 
 # --- Application Entry Point ---
@@ -558,5 +685,6 @@ if __name__ == "__main__":
     app.setFont(base)
 
     w = App(fonts, screens)
+    
     w.showFullScreen()
     sys.exit(app.exec())
