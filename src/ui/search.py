@@ -85,7 +85,7 @@ class SearchPage(QWidget):
             return b
 
         self.btn_home  = mk_icon("home.png",  self.on_home)
-        self.btn_voice = mk_icon("voice.png", self.on_voice)
+        self.btn_voice = mk_icon("voice_over.png", self.on_voice)
         self.btn_nav   = mk_icon("nav_b.png", self.on_nav)   # 아이콘 파일명 확인
         self.btn_sos   = mk_icon("sos.png",   self.on_sos)
 
