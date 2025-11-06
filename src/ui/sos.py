@@ -6,10 +6,12 @@ import socket
 import threading
 
 from PySide6.QtCore import Qt, QRect, QSize, QUrl, QTimer, Slot
-from PySide6.QtGui import QPixmap, QIcon, QRegion, QPainterPath, QFont
+from PySide6.QtGui import QPixmap, QIcon, QRegion, QPainterPath, QFont, QFontDatabase
 from PySide6.QtWidgets import QWidget, QLabel, QPushButton
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWebEngineCore import QWebEnginePage
+
+FONT_PATH = Path("/home/autonav/2025ESWContest_mobility_6051/src/ui/assets/fonts/SourceSans3-SemiBold.ttf")
 
 # ==== SOS 전송 설정 ====
 SERVER_IP = "10.0.0.23"
@@ -33,13 +35,13 @@ class SOSPage(QWidget):
     CARD_PCT = (0.22, 0.23, 0.56, 0.70)
 
     # 카드 내부 구성 요소 비율
-    MAP_W_PCT  = 0.74
+    MAP_W_PCT  = 0.67
     MAP_H_PCT  = 0.60
     MAP_TOP_PCT = 0.05
-    BTN_W_PCT  = 0.28
-    BTN_H_PX   = 40
-    BTN_BOTTOM_PCT = 0.005
-    BTN_ICON_SCALE = 0.9
+    BTN_W_PCT  = 0.3
+    BTN_H_PX   = 45
+    BTN_BOTTOM_PCT = 0.045
+    BTN_ICON_SCALE = 1.0
 
     def __init__(self, assets_dir: Path, on_home=None, on_voice=None, on_nav=None, on_sos=None, on_send=None, fonts=None, sign_engine=None):
         super().__init__()
@@ -57,6 +59,20 @@ class SOSPage(QWidget):
         self.bg = QLabel(self); self.bg.setAlignment(Qt.AlignCenter)
         self.pm_bg = self._load_pix(self.assets / "bg" / "sos_bg.png")
 
+        # --- 폰트 로드 ---
+        self._font_family = None
+        try:
+            fid = QFontDatabase.addApplicationFont(str(FONT_PATH))
+            fams = QFontDatabase.applicationFontFamilies(fid) if fid != -1 else []
+            if fams:
+                self._font_family = fams[0]  # 예: "Source Sans 3"
+                print(f"[SOS] Font loaded: {self._font_family}")
+            else:
+                print("[SOS] Font families not found, using fallback.")
+        except Exception as e:
+            print(f"[SOS] Font load error: {e}")
+
+
         # --- 상단 아이콘 (navigation.py와 동일한 제작 방식) ---
         def mk_icon(fname, cb):
             b = QPushButton(self)
@@ -66,6 +82,7 @@ class SOSPage(QWidget):
             b.setCursor(Qt.PointingHandCursor)
             if cb: b.clicked.connect(cb)
             return b
+        
 
         self.btn_home  = mk_icon("home.png",        self.on_home)
         self.btn_voice = mk_icon("voice_over.png",  self.on_voice)
@@ -90,9 +107,11 @@ class SOSPage(QWidget):
         self.lng_label.setStyleSheet("color:#DADADA;")
 
         # 폰트(페이지 공통 폰트가 있으면 사용)
-        self.coords_title.setFont(QFont(self.fonts.get("korean", "Arial"), 13))
-        self.lat_label.setFont(   QFont(self.fonts.get("korean", "Arial"), 12))
-        self.lng_label.setFont(   QFont(self.fonts.get("korean", "Arial"), 12))
+        base_family = self._font_family or self.fonts.get("korean", "Arial")
+        self.coords_title.setFont(QFont(base_family, 13))
+        self.lat_label.setFont(   QFont(base_family, 12))
+        self.lng_label.setFont(   QFont(base_family, 12))
+
 
         # SOS 버튼
         self.btn_send = QPushButton(self)
@@ -115,6 +134,7 @@ class SOSPage(QWidget):
         self._relayout()
         QTimer.singleShot(1000, self._set_default_location_if_needed)
         QTimer.singleShot(0, self._load_initial_map)
+
 
     # ========================
     # 공통 유틸 (navigation.py와 동일 패턴)
@@ -238,6 +258,8 @@ class SOSPage(QWidget):
         # 카드 영역(퍼센트 기반, 전체 화면 기준)
         cx, cy, cw, ch = self._card_rect(full)
 
+        self._apply_font_sizes(ch)
+
         # 지도 영역
         pad = int(cw * 0.06)
         y_top  = int(ch * self.MAP_TOP_PCT)
@@ -283,6 +305,27 @@ class SOSPage(QWidget):
         self.btn_send.raise_()
         for b in (self.btn_home, self.btn_nav, self.btn_sos, self.btn_voice):
             b.raise_()
+        
+    def _apply_font_sizes(self, card_h: int):
+        title_px = max(10, int(card_h * 0.048))
+        value_px = max(9, int(card_h * 0.045))
+
+        # 로드된 패밀리 > 전달받은 fonts 사전 > 시스템 폴백 순서
+        fam = self._font_family or self.fonts.get("korean", "Arial")
+        fam_css = f"font-family: '{fam}';"
+
+        self.coords_title.setStyleSheet(
+            f"{fam_css} color:#CFCFCF; font-weight:700; font-size:{title_px}px;"
+        )
+        self.lat_label.setStyleSheet(
+            f"{fam_css} color:#DADADA; font-weight:600; font-size:{value_px}px;"
+        )
+        self.lng_label.setStyleSheet(
+            f"{fam_css} color:#DADADA; font-weight:600; font-size:{value_px}px;"
+        )
+
+
+
 
     def _card_rect(self, out_rect: QRect) -> tuple[int,int,int,int]:
         px, py, pw, ph = self.CARD_PCT

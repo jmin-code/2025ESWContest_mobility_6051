@@ -4,8 +4,8 @@ from PySide6.QtWidgets import QWidget, QLabel, QPushButton
 
 class WelcomePage(QWidget):
     BASE_W, BASE_H = 800, 480
-    BTN_W, BTN_H = 162, 49
-    BTN_BOTTOM_MARGIN = 125
+    BTN_W, BTN_H = 250, 120
+    BTN_BOTTOM_MARGIN = 165
 
     def __init__(self, assets_dir, on_start, fonts=None, sign_engine=None):
         super().__init__()
