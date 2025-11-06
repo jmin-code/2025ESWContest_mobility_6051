@@ -1,4 +1,5 @@
 # ui/search.py
+# -*- coding: utf-8 -*-
 
 from PySide6.QtCore import Qt, QRect, QSize, QUrl, Slot, QTimer
 from PySide6.QtGui import QPixmap, QIcon, QImage, QFont
@@ -8,7 +9,6 @@ from PySide6.QtWebEngineCore import (
     QWebEnginePage, QWebEngineProfile, QWebEngineSettings, QWebEngineUrlRequestInterceptor
 )
 from ui.chat import ChatPanel
-import urllib.parse
 
 # --- 디버깅용 클래스 ---
 class _NetLogger(QWebEngineUrlRequestInterceptor):
@@ -48,10 +48,11 @@ class SearchPage(QWidget):
         # --- WebEngine 설정 ---
         self.web_view = QWebEngineView(self)
         profile = QWebEngineProfile.defaultProfile()
-        self._interceptor = _NetLogger(self)  # 보관해서 GC 방지
+        self._interceptor = _NetLogger(self)  # GC 방지 위해 보관
         profile.setUrlRequestInterceptor(self._interceptor)
 
         page = _DebugWebPage(profile, self)
+        page.settings().setAttribute(QWebEngineSettings.JavascriptEnabled, True)
         page.featurePermissionRequested.connect(
             lambda origin, feature: page.setFeaturePermission(origin, feature, QWebEnginePage.PermissionGrantedByUser)
         )
@@ -80,14 +81,12 @@ class SearchPage(QWidget):
                 b.setIcon(QIcon(pm))
             b.setStyleSheet("border:none;background:transparent")
             b.setCursor(Qt.PointingHandCursor)
-            if cb:
-                b.clicked.connect(cb)
+            if cb: b.clicked.connect(cb)
             return b
-
-        self.btn_home  = mk_icon("home.png",  self.on_home)
-        self.btn_voice = mk_icon("voice_over.png", self.on_voice)
-        self.btn_nav   = mk_icon("nav_b.png", self.on_nav)   # 아이콘 파일명 확인
-        self.btn_sos   = mk_icon("sos.png",   self.on_sos)
+        self.btn_home  = mk_icon("home.png",        self.on_home)
+        self.btn_voice = mk_icon("voice_over.png",  self.on_voice)
+        self.btn_nav   = mk_icon("nav_b.png",       self.on_nav)   # 활성 탭
+        self.btn_sos   = mk_icon("sos.png",         self.on_sos)
 
         # --- 엔진 시그널 ---
         if self.sign_engine:
@@ -112,11 +111,11 @@ class SearchPage(QWidget):
         self.btn_recenter.clicked.connect(self._recenter_map_once)
         self.btn_recenter.hide()
 
-        # --- 디자인 기준 좌표 ---
+        # --- 디자인 기준 좌표 (Navigation과 동일 방식) ---
         self.layout = {
             "chat":   (520,  79, 260, 140),
-            "input":  (520, 240, 265,  56),
-            "camera": (520, 303, 260, 160),
+            "input":  (520, 242, 265,  56),
+            "camera": (520, 303, 265, 160),
         }
         self._relayout()
 
@@ -157,7 +156,6 @@ class SearchPage(QWidget):
         self.current_location = (lat, lng)
         if self.is_map_locked:
             return  # 검색 고정 상태에서는 자동 이동 안 함
-
         if self._map_ready:
             js_code = f"window.updateCurrentLocation({lat}, {lng});"
             self.web_view.page().runJavaScript(js_code)
@@ -188,7 +186,7 @@ class SearchPage(QWidget):
             pm = QPixmap.fromImage(qt_image)
             self.camera_view.setPixmap(pm.scaled(self.camera_view.size(), Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation))
 
-    # ===== 유틸 =====
+    # ===== 유틸 (NavigationPage와 동일한 형태) =====
     def _load_pix(self, path):
         pm = QPixmap(str(path))
         if not pm.isNull() and (pm.width() >= self.BASE_W*2 or pm.height() >= self.BASE_H*2):
@@ -204,19 +202,20 @@ class SearchPage(QWidget):
         s = min(bw/w0, bh/h0); w,h = int(w0*s), int(h0*s)
         return QRect(box.x()+(bw-w)//2, box.y()+(bh-h)//2, w, h)
 
-    def _map_from_design(self, x, y, w, h, *, out_rect: QRect) -> QRect:
-        """800x480 기준 좌표를 실제 창 크기에 매핑"""
-        sx = out_rect.width()  / self.BASE_W
-        sy = out_rect.height() / self.BASE_H
-        X = int(round(x * sx))
-        Y = int(round(y * sy))
-        W = int(round(w * sx))
-        H = int(round(h * sy))
+    def _map_from_design(self, fit: QRect, x, y, w=None, h=None, *, right=None, bottom=None) -> QRect:
+        """Navigation과 동일: fit(배경이 들어간 사각형) 기준으로 800x480 좌표 매핑"""
+        sx, sy = fit.width()/self.BASE_W, fit.height()/self.BASE_H
+        X, Y = fit.x()+int(round(x*sx)), fit.y()+int(round(y*sy))
+        if w is not None and h is not None:
+            W, H = int(round(w*sx)), int(round(h*sy))
+        else:
+            W = fit.width()  - (X - fit.x()) - int(round((right or 0)*sx))
+            H = fit.height() - (Y - fit.y()) - int(round((bottom or 0)*sy))
         return QRect(X, Y, W, H)
 
-    def _rect(self, out_rect: QRect, key: str) -> QRect:
+    def _rect(self, fit: QRect, key: str) -> QRect:
         x, y, w, h = self.layout[key]
-        return self._map_from_design(x, y, w, h, out_rect=out_rect)
+        return self._map_from_design(fit, x, y, w=w, h=h)
 
     # === 지도 컨트롤 ===
     @Slot()
@@ -242,7 +241,7 @@ class SearchPage(QWidget):
     def _relayout(self):
         full = self.rect()
 
-        # 배경
+        # 배경 fit 사각형
         self.bg.setGeometry(full)
         fit = self._fit_rect_for_pixmap(self.pm_bg, full)
         if not self.pm_bg.isNull():
@@ -250,32 +249,33 @@ class SearchPage(QWidget):
             img = self.pm_bg.toImage().scaled(int(fit.width()*dpr), int(fit.height()*dpr),
                                               Qt.KeepAspectRatio, Qt.SmoothTransformation)
             pm2 = QPixmap.fromImage(img); pm2.setDevicePixelRatio(dpr)
+            self.bg.setGeometry(fit)
             self.bg.setPixmap(pm2)
 
-        # 좌측 지도
-        self.web_view.setGeometry(self._map_from_design(15, 79, 480, 385, out_rect=full))
+        # 좌측 지도 (Navigation과 동일 좌표)
+        self.web_view.setGeometry(self._map_from_design(fit, 22, 87, w=468, h=373))
 
         # 우측 패널
-        self.chat.setGeometry(self._rect(full, "chat"))
-        if not self.chat.isVisible():
-            self.chat.show()
-        self.lbl_hangul.setGeometry(self._rect(full, "input"))
-        self.camera_view.setGeometry(self._rect(full, "camera"))
+        self.chat.setGeometry(self._rect(fit, "chat"))
+        if not self.chat.isVisible(): self.chat.show()
+        self.lbl_hangul.setGeometry(self._rect(fit, "input"))
+        self.camera_view.setGeometry(self._rect(fit, "camera"))
 
-        # 상단 아이콘
+        # 상단 아이콘 (Navigation 동일)
         for btn, x, y0, w0, h0 in (
             (self.btn_home, 603, 20, 24, 24),
             (self.btn_voice, 653, 20, 24, 24),
             (self.btn_nav,  703, 20, 22, 22),
             (self.btn_sos,  753, 20, 22, 22),
         ):
-            rbtn = self._map_from_design(x, y0, w0, h0, out_rect=full)
+            rbtn = self._map_from_design(fit, x, y0, w=w0, h=h0)
             btn.setFixedSize(rbtn.width(), rbtn.height())
             btn.setIconSize(QSize(rbtn.width(), rbtn.height()))
             btn.move(rbtn.x(), rbtn.y())
 
-        # 현위치 버튼 (좌상단 여백에 고정)
+        # 현위치 버튼 (Navigation과 동일 위치 고정)
         self.btn_recenter.move(30, 95)
+        self.btn_recenter.raise_()
 
         # Z-Order
         self.bg.lower()
