@@ -14,7 +14,7 @@ BASE_DIR = SRC_DIR.parent
 sys.path.insert(0, str(SRC_DIR))
 
 from PySide6.QtWidgets import QApplication, QWidget, QStackedWidget, QHBoxLayout, QLabel, QVBoxLayout, QStackedLayout, QGraphicsOpacityEffect
-from PySide6.QtGui import QFontDatabase, QFont, QPixmap, QTransform
+from PySide6.QtGui import QFontDatabase, QFont, QPixmap
 from PySide6.QtCore import Slot, QThread, QTimer, Signal, QObject, Qt, QEasingCurve, QPropertyAnimation, QParallelAnimationGroup, QRect
 
 DISABLE_GPS = os.getenv("DISABLE_GPS", "").lower() in {"1", "true", "yes", "on"}
@@ -38,9 +38,6 @@ ASSETS = SRC_DIR / "ui" / "assets"
 ACTIVATION_GESTURE = 'start'
 # 'delete' 제스처 추가
 COMMAND_GESTURES = {'arrival', 'description', 'traffic', 'voice', 'emergency', 'delete'}
-SPEED_THRESHOLD = 20.0 # 속도 제한 임계값 (km/h)
-WARNING_IMAGE_PATH = ASSETS / "HUD" / "HUD_warning.png"
-
 
 # --- Helper Functions ---
 def load_fonts():
@@ -63,7 +60,7 @@ class GPSClient(QObject):
     백그라운드에서 gps.py 서버에 접속해 데이터를 가져오고,
     PySide6 UI 스레드로 안전하게 신호를 보내는 역할.
     """
-    new_gps_data = Signal(float, float, float)  #(lat, lng, spd)
+    new_location = Signal(float, float) # (lat, lng) 신호 정의
 
     def __init__(self, url="http://127.0.0.1:6051/api/gps"):
         super().__init__()
@@ -78,8 +75,8 @@ class GPSClient(QObject):
                 response = requests.get(self._url, timeout=1)
                 if response.status_code == 200:
                     data = response.json()
-                    if "lat" in data and "lon" in data and "spd" in data:
-                        self.new_gps_data.emit(data["lat"], data["lon"], data["spd"])
+                    if "lat" in data and "lon" in data:
+                        self.new_location.emit(data["lat"], data["lon"])
                 # else:
                 #     print(f"[GPSClient] 서버 응답 오류: {response.status_code}") # 디버깅용
             except requests.RequestException:
@@ -90,29 +87,6 @@ class GPSClient(QObject):
     def stop(self):
         self._running = False
         print("🛑 GPS 클라이언트 중지.")
-
-
-# =========================================================
-# Warning Page Class
-# =========================================================
-class WarningPage(QWidget):
-    def __init__(self, image_path):
-        super().__init__()
-        layout = QVBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        label = QLabel()
-        if Path(image_path).exists():
-            pixmap = QPixmap(str(image_path))
-            label.setPixmap(pixmap)
-            label.setScaledContents(True)
-            label.setAlignment(Qt.AlignCenter)
-        else:
-            label.setText("WARNING!")
-            label.setAlignment(Qt.AlignCenter)
-        layout.addWidget(label)
-        self.setStyleSheet("background-color: black;")
-
-        
 # =========================================================
 # Main App Class
 # =========================================================
@@ -124,18 +98,20 @@ class App(QWidget):
         
         self.setWindowFlags(Qt.FramelessWindowHint)
         self.current_location = None
-        self.hud_window = None
-        self.is_speeding = False
-        self.TRANSITION_MS = 300
+        self.hud_window = None # hud_window 속성 추가
+        self.TRANSITION_MS = 300              # ← 360~420ms 추천
         self.TRANSITION_EASING = QEasingCurve.OutQuint
 
+        # --- Setup HUD on secondary monitor if available ---
         if len(screens) > 1:
-            main_screen_name = "HDMI-1-2"
+            # 사용할 모니터 이름을 직접 지정합니다.
+            main_screen_name = "HDMI-A-2"
             hud_screen_name = "DSI-1"
 
             main_screen = None
             hud_screen = None
 
+            # 연결된 모든 화면의 이름을 확인하여 맞는 화면을 찾습니다.
             for screen in screens:
                 print(f"감지된 모니터: {screen.name()}") # 디버깅을 위해 현재 모니터 이름 출력
                 if screen.name() == main_screen_name:
@@ -143,16 +119,19 @@ class App(QWidget):
                 elif screen.name() == hud_screen_name:
                     hud_screen = screen
 
+            # 메인 화면을 지정된 모니터로 이동시킵니다.
             if main_screen:
                 self.move(main_screen.geometry().topLeft())
                 print(f"✅ 메인 창을 {main_screen_name} 모니터로 이동했습니다.")
 
+            # HUD 화면을 지정된 모니터에 전체화면으로 띄웁니다.
             if hud_screen:
                 self.hud_window = HUDWindow(fonts)
                 self.hud_window.setGeometry(hud_screen.geometry())
                 self.hud_window.showFullScreen()
                 print(f"✅ HUD 창을 {hud_screen_name} 모니터에 생성했습니다.")
             else:
+                # DSI-1 모니터를 찾지 못했을 경우
                 print(f"⚠️ HUD 모니터({hud_screen_name})를 찾을 수 없습니다.")
         else:
              print("⚠️ 모니터가 1대만 감지되었습니다. HUD를 생성하지 않습니다.")
@@ -186,10 +165,6 @@ class App(QWidget):
             )
 
         self.pages = {}
-
-        #과속 경고 페이지
-        self.warning_page = WarningPage(WARNING_IMAGE_PATH)
-        self.pages["warning"] = self.warning_page
 
         # Welcome
         self.pages["welcome"] = WelcomePage(
@@ -252,14 +227,20 @@ class App(QWidget):
         self.pages["sos"] = self.sos_page
 
         # Voice
-        self.voice_page = VoicePage(ASSETS, fonts=fonts, sign_engine=self.sign_engine)
+        self.voice_page = VoicePage(
+            ASSETS,
+            on_home=go("welcome", effect="fade", duration=300),
+            on_recog=go("recognition", effect="fade", duration=300),
+            on_sos=go("sos", effect="fade", duration=300),
+            fonts=fonts, sign_engine=self.sign_engine
+        )
         self.pages["voice"] = self.voice_page
         self.pages["voice"].playback_finished.connect(self._on_voice_playback_finished)
 
         # StackedWidget 등록 & 초기 페이지
         for p in self.pages.values():
             self.stack.addWidget(p)
-        self.stack.setCurrentWidget(self.pages["welcome"])
+        self.stack.setCurrentWidget(self.pages["welcome"])  # 초기 진입은 애니메이션 없이 OK
 
         
         # --- 4. 중앙 시그널 연결 ---
@@ -270,10 +251,10 @@ class App(QWidget):
         if self.hud_window:
             self.sign_engine.gesture_recognized.connect(self.hud_window.show_gesture_image)
             self.sign_engine.hangul_result_updated.connect(self.hud_window.update_text)
-            self.sign_engine.hangul_input_finished.connect(lambda text: self.hud_window.update_text(text))
+            self.sign_engine.hangul_input_finished.connect(lambda text: self.hud_window.update_text(text)) # Also update on final text
         
         # GPS 신호를 중앙 관리 슬롯에 연결
-        self.gps_client.new_gps_data.connect(self._handle_gps_data)
+        self.gps_client.new_location.connect(self._update_location)
         
         self.stack.currentChanged.connect(self._on_page_changed)
 
@@ -284,7 +265,7 @@ class App(QWidget):
             self.sign_engine.hangul_input_finished.connect(self.pages["search"].append_user_text)
             self.sign_engine.hangul_result_updated.connect(self.voice_page._on_hangul_progress)
             self.sign_engine.hangul_input_finished.connect(self.voice_page.on_hangul_final)
-            self.voice_page.playback_finished.connect(self._on_voice_playback_finished)
+            self.voice_page.playback_finished.connect(self._on_voice_playback_finished) # <<< 복원
         except Exception:
             pass
 
@@ -298,10 +279,11 @@ class App(QWidget):
     def _switch(self, to_widget: QWidget, *, effect: str = "fade",
                 duration: int = None, easing: QEasingCurve.Type = None,
                 direction: str = "left"):
-
+        # 기본값
         duration = duration if duration is not None else getattr(self, "TRANSITION_MS", 380)
         easing   = easing   if easing   is not None else getattr(self, "TRANSITION_EASING", QEasingCurve.InOutCubic)
 
+        # 중복/무효 호출 방지
         if not to_widget or self.stack.currentWidget() is to_widget:
             return
         if getattr(self, "_xfer_busy", False):
@@ -312,6 +294,7 @@ class App(QWidget):
         self._transitioning = True
         self.setCursor(Qt.WaitCursor)
 
+        # 스냅샷 만들 사이즈 확인 (0이면 즉시 전환)
         r = self.stack.rect(); w, h = r.width(), r.height()
         if w <= 0 or h <= 0:
             self.stack.setCurrentWidget(to_widget)
@@ -322,6 +305,7 @@ class App(QWidget):
 
         frm = self.stack.currentWidget()
 
+        # 오버레이 준비
         if hasattr(self, "_xfer_overlay") and self._xfer_overlay:
             self._xfer_overlay.deleteLater()
         overlay = QWidget(self.stack)
@@ -329,12 +313,14 @@ class App(QWidget):
         overlay.setGeometry(r); overlay.show()
         self._xfer_overlay = overlay
 
+        # from 스냅샷
         pix_from = QPixmap(w, h)
         frm.render(pix_from)
 
         from_lbl = QLabel(overlay); from_lbl.setPixmap(pix_from)
         from_lbl.setGeometry(0, 0, w, h); from_lbl.show()
 
+        # to: 일단 가벼운 검은 레이어(가장 안정적)
         to_lbl = QLabel(overlay)
         to_lbl.setStyleSheet("background:black;")
         to_lbl.setGeometry(0, 0, w, h); to_lbl.show()
@@ -461,6 +447,7 @@ class App(QWidget):
         page_name = type(current_page).__name__
         print(f"[App] Page changed to: {page_name}")
 
+        # HUD가 존재할 경우, 페이지에 맞는 고정 이미지 설정
         if self.hud_window:
             self.hud_window.clear_text() # 페이지 변경 시 항상 텍스트는 초기화
             if page_name == "RecognitionPage":
@@ -550,6 +537,47 @@ class App(QWidget):
         if self.hud_window:
             QTimer.singleShot(3000, self.hud_window.clear_text)
 
+    # @Slot()
+    # def _on_session_finished(self):
+    #     """'end' 제스처가 1초간 유지되어 세션을 종료/완료할 때 호출됨"""
+    #     current_page = self.stack.currentWidget()
+    #     page_name = type(current_page).__name__
+    #     print(f"[App] Session finished signal received on {page_name}.")
+
+    #     if isinstance(current_page, NavigationPage):
+    #         final_text = self.sign_engine.get_hangul_result()
+    #         print(f"[App] Hangul input finished with: '{final_text}'. Updating route.")
+    #         self.navigation_page.update_route(final_text)
+    #         self.sign_engine.switch_to_gesture_mode()
+
+    #     elif isinstance(current_page, DescriptionPage):
+    #         final_text = self.sign_engine.get_hangul_result()
+    #         print(f"[App] Hangul input finished with: '{final_text}'. Searching for info.")
+    #         self.description_page.search_for(final_text)
+    #         self.sign_engine.switch_to_gesture_mode()
+
+    #     elif isinstance(current_page, SearchPage):
+    #         final_text = self.sign_engine.get_hangul_result()
+    #         print(f"[App] Hangul input finished with: '{final_text}'. Searching for info.")
+    #         self.search_page.search_for(final_text)
+    #         self.sign_engine.switch_to_gesture_mode()
+
+    #     elif isinstance(current_page, VoicePage):
+    #         try:
+    #             self.pages["voice"].on_end_gesture()
+    #         except Exception as e:
+    #             print("[App] VoicePage end gesture handling error:", e)
+
+    #     elif isinstance(current_page, SOSPage):
+    #         try:
+    #             self.pages["sos"].on_end_gesture()
+    #         except Exception as e:
+    #             print("[App] SOSPage end gesture handling error:", e)
+
+    #     else:
+    #         print("[App] Returning to Welcome Page.")
+    #         self.stack.setCurrentWidget(self.pages["welcome"])
+
     @Slot()
     def _on_session_finished(self):
         current_page = self.stack.currentWidget()
@@ -575,17 +603,19 @@ class App(QWidget):
     @Slot(float, float)
     def _update_location(self, lat, lng):
         self.current_location = (lat, lng)
+        # SOS 페이지가 존재하면 위치 업데이트
         if hasattr(self, 'sos_page'):
             self.sos_page.set_location(lat, lng)
-
+        # Navigation 페이지가 존재하면 위치 업데이트 (필요 시)
         if hasattr(self, 'navigation_page'):
+            # navigation_page에도 set_location 메서드를 추가해야 함
             if hasattr(self.navigation_page, 'set_location'):
                 self.navigation_page.set_location(lat, lng)
 
 
     def closeEvent(self, event):
         print("Main window closing. Shutting down all threads.")
-        if self.hud_window:
+        if self.hud_window: # Close HUD window as well 
             self.hud_window.close()
         if hasattr(self, 'gps_client'): self.gps_client.stop()
         if hasattr(self, 'sign_engine'): self.sign_engine.stop()
@@ -596,127 +626,96 @@ class App(QWidget):
         event.accept()
 
 
-    @Slot(float, float, float)
-    def _handle_gps_data(self, lat, lng, spd):
-        self.current_location = (lat, lng)
-        
-        if hasattr(self, 'sos_page'): self.sos_page.set_location(lat, lng)
-        if hasattr(self, 'navigation_page') and hasattr(self.navigation_page, 'set_location'):
-            self.navigation_page.set_location(lat, lng)
-
-        is_currently_speeding = spd > SPEED_THRESHOLD
-
-        if is_currently_speeding and not self.is_speeding:
-            print(f"⚠️ 과속 감지! 현재 속도: {spd:.1f} km/h. 경고 화면 표시.")
-            self.is_speeding = True
-            if hasattr(self.sign_engine, 'pause'): self.sign_engine.pause()
-            
-            self.stack.setCurrentWidget(self.warning_page)
-            if self.hud_window: self.hud_window.set_static_image(WARNING_IMAGE_PATH)
-
-        elif not is_currently_speeding and self.is_speeding:
-            print(f"✅ 정상 속도 복귀. 현재 속도: {spd:.1f} km/h. UI 복원.")
-            self.is_speeding = False
-            if hasattr(self.sign_engine, 'resume'): self.sign_engine.resume()
-            
-            self._switch(self.pages["recognition"], effect="fade")
-            if self.hud_window:
-                self._on_page_changed(self.stack.indexOf(self.pages["recognition"]))
-
-
 # =========================================================
 # HUD Window Class for Secondary Monitor
 # =========================================================
-from PySide6.QtWidgets import QWidget, QLabel, QStackedLayout
-from PySide6.QtGui import QPixmap, QFont, QTransform
-from PySide6.QtCore import Qt, QTimer, Slot
-
 class HUDWindow(QWidget):
     def __init__(self, fonts: dict):
         super().__init__()
         self.setWindowTitle("SignNav HUD")
         self.setStyleSheet("background-color: black;")
 
+        # 카드처럼 위젯을 쌓아놓고 하나씩 보여주는 QStackedLayout 사용
         self.layout = QStackedLayout(self)
         self.setLayout(self.layout)
 
-        self.display_label = QLabel()
-        self.display_label.setAlignment(Qt.AlignCenter)
+        # --- 1. 이미지 표시용 라벨 ---
+        self.image_label = QLabel()
+        self.image_label.setAlignment(Qt.AlignCenter)
 
-        self._text_renderer_label = QLabel()
-        self._text_renderer_label.setAlignment(Qt.AlignCenter)
+        # --- 2. 텍스트 표시용 라벨 ---
+        self.text_label = QLabel()
+        self.text_label.setAlignment(Qt.AlignCenter)
         font = QFont(fonts.get("korean", "Arial"), 100, QFont.Bold)
-        self._text_renderer_label.setFont(font)
+        self.text_label.setFont(font)
+        self.text_label.setStyleSheet("color: white;")
 
-        self._text_renderer_label.setStyleSheet("background-color: transparent; color: white;")
-        
-        self._text_renderer_label.setVisible(False)
-
+        # --- 3. 아무것도 표시하지 않을 때 쓸 빈 위젯 ---
         self.blank_widget = QWidget()
-        
-        self.layout.addWidget(self.display_label)
+
+        # 생성한 위젯들을 레이아웃에 추가
+        self.layout.addWidget(self.image_label)
+        self.layout.addWidget(self.text_label)
         self.layout.addWidget(self.blank_widget)
+
+        # 처음에는 빈 화면을 보여주도록 설정
         self.layout.setCurrentWidget(self.blank_widget)
 
+        # --- Timers and Image Paths ---
         self.static_image_path = None
         self.temp_image_timer = QTimer(self)
         self.temp_image_timer.setSingleShot(True)
         self.temp_image_timer.timeout.connect(self._restore_static_image)
 
-        # ... (gesture_images 딕셔너리는 그대로) ...
         self.gesture_images = {
             'arrival': ASSETS / "HUD" / "HUD_nav.png",
             'description': ASSETS / "HUD" / "HUD_discript.png",
             'traffic': ASSETS / "HUD" / "HUD_loc.png",
             'voice': ASSETS / "HUD" / "HUD_voice.png",
-            'emergency': ASSETS / "HUD" / "HUD_sos.png"
+            'emergency': ASSETS / "HUD" / "HUD_sos.png",
+            'delete': ASSETS / "HUD" / "HUD_warning.png"
         }
 
-    def _set_flipped_pixmap(self, pixmap: QPixmap):
-        if pixmap.isNull():
-            self.display_label.clear()
-            return
-
-        transform = QTransform().scale(-1, 1)
-        flipped_pixmap = pixmap.transformed(transform)
-        scaled_pixmap = flipped_pixmap.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation)
-        self.display_label.setPixmap(scaled_pixmap)
+    def _set_pixmap(self, image_path):
+        """이미지 경로를 받아 QLabel에 표시하고, 화면에 꽉 채우는 함수"""
+        if image_path and image_path.exists():
+            pixmap = QPixmap(str(image_path))
+            # 창 크기(self.size())에 맞춰 비율을 무시하고 이미지를 채웁니다.
+            self.image_label.setPixmap(pixmap.scaled(self.size(), Qt.IgnoreAspectRatio, Qt.SmoothTransformation))
+        else:
+            self.image_label.clear()
 
     def _restore_static_image(self):
-        if self.static_image_path and self.static_image_path.exists():
-            pixmap = QPixmap(str(self.static_image_path))
-            self._set_flipped_pixmap(pixmap)
-            self.layout.setCurrentWidget(self.display_label)
+        """타이머 종료 후, 고정 이미지(예: HUD_recog) 또는 빈 화면으로 복원"""
+        if self.static_image_path:
+            self._set_pixmap(self.static_image_path)
+            self.layout.setCurrentWidget(self.image_label)
         else:
             self.layout.setCurrentWidget(self.blank_widget)
 
     def set_static_image(self, image_path):
+        """페이지에 고정될 이미지를 설정하고 표시"""
         self.static_image_path = image_path
         self._restore_static_image()
 
     @Slot(str)
     def show_gesture_image(self, gesture: str):
+        """제스처 이미지를 2초간 임시로 표시"""
         image_path = self.gesture_images.get(gesture)
-        if image_path and image_path.exists():
-            pixmap = QPixmap(str(image_path))
-            self._set_flipped_pixmap(pixmap)
-            self.layout.setCurrentWidget(self.display_label)
+        if image_path:
+            self._set_pixmap(image_path)
+            self.layout.setCurrentWidget(self.image_label) # 이미지 라벨을 맨 위로 올림
             self.temp_image_timer.start(2000)
 
     @Slot(str)
     def update_text(self, text: str):
-        self._text_renderer_label.setText(text)
-        
-        self._text_renderer_label.setGeometry(self.rect())
-
-        text_pixmap = QPixmap(self.size())
-        text_pixmap.fill(Qt.transparent)
-        self._text_renderer_label.render(text_pixmap)
-        
-        self._set_flipped_pixmap(text_pixmap)
-        self.layout.setCurrentWidget(self.display_label)
+        """한글 텍스트를 표시"""
+        self.text_label.setText(text)
+        self.layout.setCurrentWidget(self.text_label) # 텍스트 라벨을 맨 위로 올림
 
     def clear_text(self):
+        """텍스트를 지우고 고정 이미지나 빈 화면으로 돌아감"""
+        self.text_label.clear()
         self._restore_static_image()
 
 # --- Application Entry Point ---
