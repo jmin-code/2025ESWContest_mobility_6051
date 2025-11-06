@@ -13,14 +13,14 @@ from PySide6.QtWebEngineCore import QWebEnginePage
 
 
 # <<< 중요!! >>>
-# 아래 IP 주소를 위치 정보를 수신할 컴퓨터의 실제 IP 주소로 반드시 변경해야 함
+# 아래 IP 주소를 위치 정보를 수신할 컴퓨터의 실제 IP 주소로 반드시 변경해야 합니다.
 # 예: SERVER_IP = "192.168.0.10"
 SERVER_IP = "10.0.0.23"
 SERVER_PORT = 12345
 
 # GPS 신호가 없을 때 사용할 기본 위치 (예: 인하대학교)
-DEFAULT_LATITUDE = 37.576738
-DEFAULT_LONGITUDE = 126.897859
+DEFAULT_LATITUDE = 37.4505
+DEFAULT_LONGITUDE = 126.6572
 
 
 class SOSPage(QWidget):
@@ -38,12 +38,13 @@ class SOSPage(QWidget):
     BTN_BOTTOM_PCT = 0.005
     BTN_ICON_SCALE = 0.9
 
-    def __init__(self, assets_dir: Path, on_home=None, on_voice=None, on_nav=None, on_send=None):
+    def __init__(self, assets_dir: Path, on_home=None, on_voice=None, on_nav=None, on_sos=None, on_send=None):
         super().__init__()
         self.assets = Path(assets_dir)
         self.on_home = on_home or (lambda: None)
         self.on_voice = on_voice or (lambda: None)
         self.on_nav = on_nav or (lambda: None)
+        self.on_sos = on_sos or (lambda: None)
         self.original_on_send = on_send or (lambda: None)
 
         # --- 배경 ---
@@ -182,18 +183,11 @@ class SOSPage(QWidget):
             print("[SOS] 맵 로드 실패!")
             return
         self._map_ready = True
-
-        QTimer.singleShot(100, self._update_map_to_current_location)
-
-    def _update_map_to_current_location(self):
-        if not self._map_ready:
-            return
         lat, lng = self._latlng if self._latlng else (DEFAULT_LATITUDE, DEFAULT_LONGITUDE)
         self._update_map_location(lat, lng)
 
-
     def _update_map_location(self, lat: float, lng: float):
-        js_code = f"window.updateCurrentLocation({lat}, {lng});"
+        js_code = f"updateCurrentLocation({lat}, {lng});"
         self.web.page().runJavaScript(js_code)
 
     def resizeEvent(self, e):

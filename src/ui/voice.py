@@ -56,7 +56,7 @@ class VoicePage(QWidget):
         fonts: Optional[dict] = None,
         sign_engine=None,
         default_text: str = "안녕하세요. 음성 안내 모드가 실행됩니다.",
-        on_home=None, on_recog=None, on_sos=None,
+        on_home=None, on_recog=None, on_sos=None, on_nav=None,
         **_unused,
     ):
         super().__init__()
@@ -66,6 +66,7 @@ class VoicePage(QWidget):
         self.default_text = default_text
         self.on_home_cb  = on_home  or (lambda: None)
         self.on_recog_cb = on_recog or (lambda: None)
+        self.on_nav_cb   = on_nav or (lambda: None)
         self.on_sos_cb   = on_sos   or (lambda: None)
 
         # 위치 파라미터
@@ -173,10 +174,10 @@ class VoicePage(QWidget):
             b.clicked.connect(cb)
             return b
 
-        self.btn_home  = _mk_top_icon("home.png", self.on_home_cb)
-        self.btn_voice = _mk_top_icon("voice_over.png", lambda: self.play(self._final_text or self.default_text))
-        self.btn_nav   = _mk_top_icon("nav.png", self.on_recog_cb)
-        self.btn_sos   = _mk_top_icon("sos_b.png", self.on_sos_cb)
+        self.btn_home  = _mk_top_icon("home.png", self.on_recog_cb)
+        self.btn_voice = _mk_top_icon("voice_over_b.png", lambda: self.play(self._final_text or self.default_text))
+        self.btn_nav   = _mk_top_icon("nav.png", self.on_nav_cb)
+        self.btn_sos   = _mk_top_icon("sos.png", self.on_sos_cb)
 
         # 제스처 엔진
         if self.sign_engine:
