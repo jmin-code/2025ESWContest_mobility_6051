@@ -121,6 +121,8 @@ class App(QWidget):
         super().__init__()
         self.setWindowTitle("SignNav")
         self.resize(1024, 600)
+        
+        self.setWindowFlags(Qt.FramelessWindowHint)
         self.current_location = None
         self.hud_window = None
         self.is_speeding = False
@@ -736,5 +738,6 @@ if __name__ == "__main__":
     app.setFont(base)
 
     w = App(fonts, screens)
-    w.show()
+    # w.show()
+    w.showFullScreen()
     sys.exit(app.exec())
