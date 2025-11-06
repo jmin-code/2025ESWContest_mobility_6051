@@ -11,7 +11,7 @@ class WelcomePage(QWidget):
         super().__init__()
         self.assets = assets_dir
         self.on_start = on_start
-        self.fonts = fonts or {}
+        self.fonts = fonts or {} 
 
         # --- 배경 ---
         self.bg = QLabel(self)

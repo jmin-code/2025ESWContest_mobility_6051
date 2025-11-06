@@ -211,7 +211,7 @@ class ChatPanel(QWidget):
         self.container=QWidget(); 
         self.v=QVBoxLayout(self.container); 
         self.v.setSpacing(8)
-        self.v.setContentsMargins(15,8,4,8); 
+        self.v.setContentsMargins(19,10,6,14); 
         
         self.v.insertStretch(0, 1)
         

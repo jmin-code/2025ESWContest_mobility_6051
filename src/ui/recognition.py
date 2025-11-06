@@ -135,7 +135,7 @@ class RecognitionPage(QWidget):
 
         if not self._welcome_sent:
             self.chat.clear()
-            self.append_bot_text("안녕하세요!\n무엇을 도와드릴까요?")
+            self.append_bot_text("안녕하세요! 무엇을 도와드릴까요?")
             self._welcome_sent = True
         #self._set_status("ready")
         
@@ -316,7 +316,7 @@ class RecognitionPage(QWidget):
     def _bot_echo(self, s: str):
         t = (s or "").strip().lower()
         if any(k in t for k in ("안녕", "안녕하세요", "hi", "hello", "ㅎㅇ")):
-            self.append_bot_text("안녕하세요!\n무엇을 도와드릴까요?"); return
+            self.append_bot_text("안녕하세요! 무엇을 도와드릴까요?"); return
         if any(k in t for k in ("안내", "경로", "가자", "출발")):
             self.append_bot_text("경로를 설정할게요!"); return
         if any(k in t for k in ("정보", "설명", "알려줘")):
