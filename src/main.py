@@ -8,6 +8,12 @@ import functools
 import time
 import requests
 
+# ===== High-DPI / Scaling =====
+# 픽셀 퍼펙트(스케일 1.0) 보장을 위해 환경 변수를 명시 (Wayland/X11 환경에서 권장)
+os.environ.setdefault("QT_AUTO_SCREEN_SCALE_FACTOR", "0")
+os.environ.setdefault("QT_SCALE_FACTOR", "1")           # 전역 스케일 1.0 고정
+os.environ.setdefault("QT_ENABLE_HIGHDPI_SCALING", "0") # Qt5 호환 플래그 무시용
+
 # --- Path Setup ---
 SRC_DIR = Path(__file__).resolve().parent
 BASE_DIR = SRC_DIR.parent
@@ -36,14 +42,20 @@ ASSETS = SRC_DIR / "ui" / "assets"
 ACTIVATION_GESTURE = 'start'
 COMMAND_GESTURES = {'arrival', 'description', 'traffic', 'voice', 'emergency', 'delete'}
 
+TARGET_WIDTH  = 1920
+TARGET_HEIGHT = 1080
+MAIN_SCREEN_NAME = "HDMI-A-2"  # 있으면 우선 사용
+HUD_SCREEN_NAME  = "DSI-1"     # 서브 HUD
+
 # --- Helper Functions ---
 def load_fonts():
-    fonts_dir=ASSETS/"fonts";loaded={}
-    def add_font(path,key):
+    fonts_dir = ASSETS / "fonts"
+    loaded = {}
+    def add_font(path, key):
         if path.exists():
-            fid=QFontDatabase.addApplicationFont(str(path))
-            fams=QFontDatabase.applicationFontFamilies(fid) if fid!=-1 else []
-            if fams: loaded[key]=fams[0]
+            fid = QFontDatabase.addApplicationFont(str(path))
+            fams = QFontDatabase.applicationFontFamilies(fid) if fid != -1 else []
+            if fams: loaded[key] = fams[0]
     add_font(fonts_dir/"SourceSans3-Regular.ttf","regular")
     add_font(fonts_dir/"SourceSans3-SemiBold.ttf","semibold")
     add_font(fonts_dir/"NotoSansKR-Regular.ttf","korean")
@@ -54,6 +66,32 @@ def start_web_server(host='localhost', port=5050, directory='.'):
     httpd = http.server.HTTPServer((host, port), handler)
     print(f"✅ Starting web server at http://{host}:{port}, serving from {directory}")
     httpd.serve_forever()
+
+def pick_screen(screens, *, want_name=None, want_size=None):
+    """
+    - 이름이 want_name과 일치하면 최우선
+    - 그다음 해상도 want_size(예: (1920,1080)) 일치하는 스크린
+    - 없으면 primary() 반환
+    """
+    if not screens:
+        return None
+    if want_name:
+        for s in screens:
+            try:
+                if s.name() == want_name:
+                    return s
+            except Exception:
+                pass
+    if want_size:
+        for s in screens:
+            g = s.geometry()
+            if g.width() == want_size[0] and g.height() == want_size[1]:
+                return s
+    # fallback: primary
+    try:
+        return QApplication.primaryScreen()
+    except Exception:
+        return screens[0]
 
 class GPSClient(QObject):
     new_location = Signal(float, float) # (lat, lng)
@@ -88,35 +126,40 @@ class App(QWidget):
     def __init__(self, fonts: dict, screens):
         super().__init__()
         self.setWindowTitle("SignNav")
-        self.resize(1024, 600)
         self.setWindowFlags(Qt.FramelessWindowHint)
+
+        # ===== 화면 배치 =====
+        # 1) 1920x1080 해상도의 메인 스크린 선택 (이름 우선: HDMI-A-2)
+        main_screen = pick_screen(screens, want_name=MAIN_SCREEN_NAME, want_size=(TARGET_WIDTH, TARGET_HEIGHT))
+        hud_screen  = None
+        # 2) HUD 스크린 선택 (이름 우선: DSI-1)
+        if len(screens) > 1:
+            hud_screen = pick_screen(screens, want_name=HUD_SCREEN_NAME)
+
+        # 3) 메인 창을 대상 스크린 geometry에 정확히 맞춤
+        if main_screen:
+            mg = main_screen.geometry()
+            # 정확히 1920x1080이 아니더라도 해당 스크린 전체를 사용 (풀스크린)
+            self.setGeometry(mg)
+            print(f"✅ 메인 창을 스크린로 설정: {main_screen.name()} {mg.width()}x{mg.height()}")
+        else:
+            # fallback 크기
+            self.resize(TARGET_WIDTH, TARGET_HEIGHT)
+            print(f"⚠️ 대상 스크린을 찾지 못해 {TARGET_WIDTH}x{TARGET_HEIGHT}로 설정")
 
         self.current_location = None
         self.hud_window = None
         self.TRANSITION_MS = 300
         self.TRANSITION_EASING = QEasingCurve.OutQuint
 
-        # --- Setup HUD on secondary monitor if available ---
-        if len(screens) > 1:
-            main_screen_name = "HDMI-A-2"
-            hud_screen_name  = "DSI-1"
-            main_screen = hud_screen = None
-            for screen in screens:
-                print(f"감지된 모니터: {screen.name()}")
-                if screen.name() == main_screen_name: main_screen = screen
-                elif screen.name() == hud_screen_name: hud_screen = screen
-            if main_screen:
-                self.move(main_screen.geometry().topLeft())
-                print(f"✅ 메인 창을 {main_screen_name} 모니터로 이동했습니다.")
-            if hud_screen:
-                self.hud_window = HUDWindow(fonts)
-                self.hud_window.setGeometry(hud_screen.geometry())
-                self.hud_window.showFullScreen()
-                print(f"✅ HUD 창을 {hud_screen_name} 모니터에 생성했습니다.")
-            else:
-                print(f"⚠️ HUD 모니터({hud_screen_name})를 찾을 수 없습니다.")
+        # --- HUD 창 구성 ---
+        if hud_screen:
+            self.hud_window = HUDWindow(fonts)
+            self.hud_window.setGeometry(hud_screen.geometry())
+            self.hud_window.showFullScreen()
+            print(f"✅ HUD 창을 {hud_screen.name()} 모니터에 생성했습니다.")
         else:
-            print("⚠️ 모니터가 1대만 감지되었습니다. HUD를 생성하지 않습니다.")
+            print("ℹ️ HUD 모니터 미지정 또는 단일 모니터 환경")
 
         # --- Core Engines ---
         self.sign_engine = SignEngine(camera_type="webcam")  # "picam" 가능
@@ -145,12 +188,11 @@ class App(QWidget):
         self.pages = {}
 
         # --- Pages 생성 (상단바 콜백 통일) ---
-        # 공통 콜백: 홈→Recognition, 보이스→Voice, 내비→Navigation, SOS→SOS
-        cb_home = go("recognition", effect="fade", duration=300)
-        cb_voice = go("voice", effect="fade", duration=300)
-        cb_nav = go("navigation", effect="fade", duration=300)
-        cb_sos = go("sos", effect="fade", duration=300)
-        cb_recog = cb_home  # 일부 위젯에서 on_recog 이름을 쓰는 경우 대비
+        cb_home  = go("recognition", effect="fade", duration=300)  # 홈은 Recognition
+        cb_voice = go("voice",       effect="fade", duration=300)
+        cb_nav   = go("navigation",  effect="fade", duration=300)
+        cb_sos   = go("sos",         effect="fade", duration=300)
+        cb_recog = cb_home  # on_recog 명칭 호환
 
         # Welcome
         self.pages["welcome"] = WelcomePage(
@@ -177,7 +219,7 @@ class App(QWidget):
         # Description
         self.description_page = DescriptionPage(
             ASSETS,
-            on_home=cb_home, on_voice=cb_voice, on_nav=cb_nav, on_sos=cb_sos,
+            on_home=cb_home, on_voice=cb_voice, on_recog=cb_recog, on_nav=cb_nav, on_sos=cb_sos,
             fonts=fonts, sign_engine=self.sign_engine
         )
         self.pages["description"] = self.description_page
@@ -185,7 +227,7 @@ class App(QWidget):
         # Search
         self.search_page = SearchPage(
             ASSETS,
-            on_home=cb_home, on_voice=cb_voice, on_nav=cb_nav, on_sos=cb_sos,
+            on_home=cb_home, on_voice=cb_voice, on_recog=cb_recog, on_nav=cb_nav, on_sos=cb_sos,
             fonts=fonts, sign_engine=self.sign_engine
         )
         self.pages["search"] = self.search_page
@@ -195,7 +237,7 @@ class App(QWidget):
         # SOS
         self.sos_page = SOSPage(
             ASSETS,
-            on_home=cb_home, on_voice=cb_voice, on_nav=cb_nav, on_sos=cb_sos,
+            on_home=cb_home, on_voice=cb_voice, on_nav=cb_nav,
             on_send=go("welcome", effect="fade", duration=300)
         )
         self.pages["sos"] = self.sos_page
@@ -203,7 +245,7 @@ class App(QWidget):
         # Voice
         self.voice_page = VoicePage(
             ASSETS,
-            on_home=cb_home, on_voice=cb_voice, on_recog=cb_recog, on_nav=cb_nav, on_sos=cb_sos,
+            on_home=cb_home, on_recog=cb_recog, on_nav=cb_nav, on_sos=cb_sos,
             fonts=fonts, sign_engine=self.sign_engine
         )
         self.pages["voice"] = self.voice_page
@@ -543,11 +585,17 @@ class HUDWindow(QWidget):
 
 # --- Application Entry Point ---
 if __name__ == "__main__":
+    # Qt High-DPI 옵션(아이콘/비트맵 고해상도 사용) – PySide6는 기본 활성화지만 명시
+    QApplication.setAttribute(Qt.AA_UseHighDpiPixmaps, True)
+
     os.environ['QTWEBENGINE_REMOTE_DEBUGGING'] = "5051"
     app = QApplication(sys.argv)
 
     screens = app.screens()
     print(f"✅ Found {len(screens)} screens.")
+    for s in screens:
+        g = s.geometry()
+        print(f" - {s.name()} : {g.width()}x{g.height()}  DPI={s.logicalDotsPerInch():.2f}")
 
     web_server_thread = threading.Thread(target=start_web_server, args=('localhost', 5050, ASSETS), daemon=True)
     web_server_thread.start()
@@ -558,5 +606,6 @@ if __name__ == "__main__":
     app.setFont(base)
 
     w = App(fonts, screens)
+    # 정확히 대상 스크린 해상도로 전체화면
     w.showFullScreen()
     sys.exit(app.exec())
